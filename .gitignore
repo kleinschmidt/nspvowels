@@ -1,3 +1,7 @@
 .Rproj.user
 .Rhistory
 .RData
+*_cache/
+*_files/
+*.html
+*.tex
