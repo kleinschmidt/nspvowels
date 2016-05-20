@@ -135,7 +135,7 @@ KL_genderByDialect_Ln <-
 ```
 
 ## Graphing code
-```{r, fig.height = 8}
+```{r}
 library(gtools)
 library(scales)
 
@@ -202,7 +202,7 @@ p_kl_ln <- KL_combined_Ln %>%
 
 
 ## Graphs
-```{r, fig.height = 8}
+```{r kl-plots, fig.height = 8}
 grobs <- ggplotGrob(p_kl + theme(legend.position="bottom"))$grobs
 legend_b <- grobs[[which(sapply(grobs, function(x) x$name) == "guide-box")]]
 
@@ -287,7 +287,7 @@ class_Ln <-
 ```
 
 ## Graphing code
-```{r, fig.height = 8}
+```{r}
 ## --------------------------------- 
 # define variables for quick conversion of factor levels
 
@@ -367,7 +367,7 @@ p_Ln <- class_Ln %>%
 
 
 ## Graphs
-```{r, fig.height = 8}
+```{r correct-recog-plots, fig.height = 8}
 grobs <- ggplotGrob(p_hz + theme(legend.position="bottom"))$grobs
 legend_b <- grobs[[which(sapply(grobs, function(x) x$name) == "guide-box")]]
 
