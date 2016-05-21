@@ -5,6 +5,7 @@ author: Dave Kleinschmidt
 
 ```{r preamble, cache=FALSE, message=FALSE, warning=FALSE, error=FALSE}
 
+library(ggplot2)
 library(devtools)
 load_all()
 
@@ -90,6 +91,29 @@ data_frame(data=list(d), models=list(dialect_model_list)) %>%
   mutate(lhoods = map2(data, models, apply_models))
 ```
 
+### Aggregate likelihoods across tokens for each talker
+
+```{r aggregate-lhood}
+
+posteriors <- lhoods %>%
+  mutate(id_ = row_number()) %>%
+  gather(model, lhood, -id_) %>%
+  inner_join(d %>% mutate(id_ = row_number())) %>%
+  group_by(id_) %>%
+  mutate(posterior = lhood/sum(lhood))
+
+posteriors %>%
+  group_by(Talker, Dialect, model) %>%
+  summarise(posterior = mean(posterior)) %>%
+  filter(Dialect == model) %>%
+  group_by(Dialect) %>%
+  summarise(mean(posterior))
+
+posteriors %>%
+  group_by(Dialect, model) %>%
+  summarise(posterior = mean(posterior)) %>%
+  ggplot(aes(x=Dialect, y=model, fill=posterior)) +
+  geom_tile()
 
 
 ```
