@@ -1,0 +1,91 @@
+---
+title: Inferring socio-indexical features
+author: Dave Kleinschmidt
+---
+
+```{r preamble, cache=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+
+library(devtools)
+load_all()
+
+data('nsp_vows', package='nspvowels')
+
+```
+
+
+## Train models
+
+```{r train-models}
+
+dialect_models <- nsp_vows %>% group_by(Dialect) %>% train_models()
+
+list_models <- function(m) do(m, models = set_names(.$model, .$Vowel))
+
+dialect_model_lists <-
+  dialect_models %>%
+  list_models()
+
+```
+
+
+## Test models
+
+For each token:
+
+1. Calculate the marginal likelihood under each model:
+2. Aggregate within talkers/group
+
+```{r test-models}
+
+marginal_model_lhood <- function(mods, formants) {
+  mods %>%
+    map(~ model_lhood(., formants)) %>% # list of vowels lhood vectors
+    do.call(rbind, .) %>%               # vowel x token matrix
+    apply(., 2, mean)                   # marginal token lhoods
+}
+
+dialect_formants <-
+  nsp_vows %>%
+  group_by(Dialect) %>%
+  nest() %>%
+  mutate(formants = map(data, ~ select_(., "F1", "F2") %>% as.matrix()))
+
+
+get_formants <- function(d)
+  d %>%
+    select_("F1", "F2") %>%
+    as.matrix()
+
+
+apply_model <- function(mods, data) {
+  lhood <- data %>%
+    get_formants %>%
+    marginal_model_lhood(mods, .)
+  data %>% mutate(lhood = lhood)
+}
+
+
+dialect_models %>%
+  group_by(Dialect) %>%
+  do(models = set_names(.$model, .$Vowel)) %>%
+  ungroup() %>%
+  mutate(## lhoods = map(models, ~ marginal_model_lhood(.,
+         ##                                             nsp_vows %>%
+         ##                                               ungroup() %>%
+    ##                                               get_formants()))
+    data = map(models, ~ apply_model(., ungroup(nsp_vows)))
+  ) %>%
+  unnest(data)
+  
+
+
+
+dialect_lhoods <- map(dialect_model_lists,
+                      ~ marginal_model_lhood(., formants))
+
+
+
+marginal_model_lhood(dialect_model_lists$models[[1]],
+                     dialect_formants$formants[[1]])
+
+```
