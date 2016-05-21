@@ -19,73 +19,77 @@ data('nsp_vows', package='nspvowels')
 
 dialect_models <- nsp_vows %>% group_by(Dialect) %>% train_models()
 
-list_models <- function(m) do(m, models = set_names(.$model, .$Vowel))
-
-dialect_model_lists <-
-  dialect_models %>%
-  list_models()
-
 ```
 
 
 ## Test models
 
-For each token:
+### Get models in analogous form to Vowel classification
 
-1. Calculate the marginal likelihood under each model:
-2. Aggregate within talkers/group
+For each group, want a list of models whose names are the classes. In this case, the "group" is the whole dataset, each "model" is a list of single-vowel models, and the class is Dialect.
+
+```{r list-models}
+
+list_models <- function(d, model_field, group_field)
+  set_names(d[[model_field]], d[[group_field]])
+
+dialect_model_list <-
+  dialect_models %>%
+  do(models=list_models(., 'model', 'Vowel')) %>%
+  list_models('models', 'Dialect')
+
+names(dialect_model_list)
+names(dialect_model_list[[1]])
+
+```
+
+### Calculate likelihood for each token
+
+Now we need to apply each of the Dialect models to the data.
 
 ```{r test-models}
-
-marginal_model_lhood <- function(mods, formants) {
-  mods %>%
-    map(~ model_lhood(., formants)) %>% # list of vowels lhood vectors
-    do.call(rbind, .) %>%               # vowel x token matrix
-    apply(., 2, mean)                   # marginal token lhoods
-}
-
-dialect_formants <-
-  nsp_vows %>%
-  group_by(Dialect) %>%
-  nest() %>%
-  mutate(formants = map(data, ~ select_(., "F1", "F2") %>% as.matrix()))
-
 
 get_formants <- function(d)
   d %>%
     select_("F1", "F2") %>%
     as.matrix()
 
-
-apply_model <- function(mods, data) {
-  lhood <- data %>%
-    get_formants %>%
-    marginal_model_lhood(mods, .)
-  data %>% mutate(lhood = lhood)
+#' @param data data.frame with columns F1 and F2
+#' @param mods vowel-space model (list of single-vowel models)
+#' @return vector with marginal likelihood for each row in data.
+marginal_model_lhood <- function(data, mods) {
+  mods %>%
+    map(~ model_lhood(., get_formants(data))) %>%
+                                        # list of vowels lhood vectors
+    do.call(rbind, .) %>%               # vowel x token matrix
+    apply(., 2, mean)                   # marginal token lhoods
 }
 
 
-dialect_models %>%
-  group_by(Dialect) %>%
-  do(models = set_names(.$model, .$Vowel)) %>%
-  ungroup() %>%
-  mutate(## lhoods = map(models, ~ marginal_model_lhood(.,
-         ##                                             nsp_vows %>%
-         ##                                               ungroup() %>%
-    ##                                               get_formants()))
-    data = map(models, ~ apply_model(., ungroup(nsp_vows)))
-  ) %>%
-  unnest(data)
-  
+d <- nsp_vows %>% ungroup()
+
+#' @param data data.frame with columns F1 and F2 (passed to marginal_model_lhood)
+#' @param model_list list of models to calculate likelihood
+#' @return data.frame of likelihoods, with one column per model, one row per row
+#' in data
+apply_models <- function(data, model_list) {
+  model_list %>%
+    map(~ marginal_model_lhood(data, .)) %>%
+    ## do.call(rbind, .) %>%
+    ## t() %>%                            # matrix with Dialect as cols
+    as_data_frame()                       # data frame with Dialect as cols
+}
+
+lhoods <- apply_models(ungroup(nsp_vows), dialect_model_list)
+
+```
+
+```{r grouped-lhood, eval=FALSE}
+## Wrap in a tbl_df (to accomodate grouping
+data_frame(data=list(d), models=list(dialect_model_list)) %>%
+  mutate(lhoods = map2(data, models, apply_models))
+```
 
 
-
-dialect_lhoods <- map(dialect_model_lists,
-                      ~ marginal_model_lhood(., formants))
-
-
-
-marginal_model_lhood(dialect_model_lists$models[[1]],
-                     dialect_formants$formants[[1]])
 
 ```
