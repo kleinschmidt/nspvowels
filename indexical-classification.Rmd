@@ -5,6 +5,8 @@ author: Dave Kleinschmidt
 
 ```{r preamble, cache=FALSE, message=FALSE, warning=FALSE, error=FALSE}
 
+knitr::opts_chunk$set(cache=TRUE)
+
 library(ggplot2)
 library(magrittr)
 library(tidyr)
@@ -92,8 +94,21 @@ summarise_posterior <- function(d) {
            posterior_choice = as.numeric(posterior == max(posterior)))
 }
 
-posteriors <- d %>% join_lhoods(lhoods) %>% summarise_posterior()
+posteriors <- d %>% join_lhoods(log_lhoods) %>% summarise_posterior()
 
+```
+
+```{r talker-classification, fig.width=11, fig.height=5}
+
+posteriors %>%
+  ggplot(aes(x=Talker, y=model, fill=posterior)) +
+  geom_tile() +
+  coord_equal() +
+  facet_wrap(~ Dialect, scales='free')
+
+```
+
+```{r dialect-confusion-mat}
 
 # continuous posterior probability
 posteriors %>%
@@ -111,13 +126,9 @@ posteriors %>%
   geom_tile() +
   coord_equal()
 
-posteriors %>%
-  ggplot(aes(x=Talker, y=model, fill=posterior)) +
-  geom_tile() +
-  coord_equal() +
-  facet_wrap(~ Dialect, scales='free')
-
 ```
+
+
 
 Works pretty well (unsurprisingly, beacuse we're double dipping: testing on training data).
 
@@ -155,11 +166,50 @@ posteriors_cv <-
   unnest(data) %>%
   summarise_posterior()
 
-posteriors %>%
+```
+
+Not too impressive. It looks like a lot of people are getting absorbed into Midland.
+
+```{r loo-talker-classification, fig.width=11, fig.height=5}
+
+posteriors_cv %>%
   ggplot(aes(x=Talker, y=model, fill=posterior)) +
   geom_tile() +
   coord_equal() +
   facet_wrap(~ Dialect, scales='free')
 
+```
+
+
+```{r loo-dialect-confusion-mat}
+
+# continuous posterior probability
+posteriors_cv %>%
+  group_by(Dialect, model) %>%
+  summarise(posterior = mean(posterior)) %>%
+  ggplot(aes(x=Dialect, y=model, fill=posterior)) +
+  geom_tile() +
+  coord_equal()
+
+# categorical choice
+posteriors_cv %>%
+  group_by(Dialect, model) %>%
+  summarise(posterior_choice = mean(posterior_choice)) %>%
+  ggplot(aes(x=Dialect, y=model, fill=posterior_choice)) +
+  geom_tile() +
+  coord_equal()
+
+```
+
+```{r loo-dialect-correct}
+
+binomial_ci = function(p, x) qbeta(p, sum(x)+0.5, length(x)-sum(x)+0.5)
+
+posteriors_cv %>%
+  filter(Dialect == model) %>%
+  ungroup() %>%
+  summarise(posterior_choice_mean = mean(posterior_choice),
+            posterior_choice_lo = binomial_ci(0.025, posterior_choice),
+            posterior_choice_hi = binomial_ci(0.975, posterior_choice))
 
 ```
