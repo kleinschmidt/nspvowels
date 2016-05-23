@@ -150,38 +150,108 @@ That works pretty well (unsurprisingly, beacuse we're double dipping: testing on
 
 Need to hold out each talker from training set.
 
-```{r train-test-splits}
+```{r train-test-split}
+
+#' Split data into training and test sets
+#'
+#' @param d data frame
+#' @param holdout quoted name of column that defines train/test splits.
+#' @param index quoted name of column(s) to group training data by. optional, will
+#' be preserved in output (and added as grouping to training data).
+#' @return data frame with columns `data_train`, `data_test`, one for each level of
+#' holdout and index (if specified), which are also included. `data_test` has the
+#' corresponding subset of the input data, and `data_train` has the rest.
+train_test_split <- function(d, holdout, index=NULL) {
+
+  d %>%
+    group_by_(holdout) %>%
+    summarise() %>%
+    purrr::by_row(~ anti_join(d, ., by=holdout) %>%
+                    group_by_(.dots=index)
+                  ) %>%
+    rename_('data_train' = '.out') %>%
+    inner_join(d %>%
+                 group_by_(holdout, .dots=index) %>%
+                 nest(.key='data_test'),
+               by = holdout)
+
+}
+
+```
+
+
+```{r loo-train}
 
 group_ = "Dialect"
 
 # Train model for each talker, holding their data out.
 # TODO: can be made much more efficient by only re-training the model for the
 # matching dialect.
-dialect_models_talker_held_out <-
-  nsp_vows %$%
-  unique(Talker) %>%
-  data_frame(Talker = .,
-             models = map(., ~ nsp_vows %>%
-                               filter(Talker != .x)  %>%
-                               group_by_(group_) %>%
-                               train_models() %>%
-                               do(model=list_models(., 'Vowel')) %>%
-                               list_models(group_)
-                          ))
-  
-# Combine data and models
-posteriors_cv <-
+train_models_indexical_with_holdout <- function(d, index,
+                                                category='Vowel', holdout='Talker') {
+
+  d %>%
+    train_test_split(holdout=holdout, index=index) %>%
+    mutate(models = map(data_train,
+                        ~ .x %>%
+                          train_models() %>%
+                          by_slice(~ list_models(., category), .to='model') %>%
+                          list_models(index)))
+
+
+##   d %>%
+##     group_by_(holdout) %>%
+##     summarise() %>%
+##     purrr::by_row(~ anti_join(d, ., by=holdout) %>% # hold out data from each talker
+##                     group_by_(index) %>%
+##                     train_models() %>%
+##                     do(model=list_models(., category)) %>%
+##                     list_models(index)) %>%
+##     rename(models = .out)
+
+}
+
+dialect_models_talker_held_out <- 
   nsp_vows %>%
-  group_by(Talker, Dialect) %>%
-  nest() %>%
-  left_join(dialect_models_talker_held_out) %>%
-  mutate(lhoods = map2(data, models, apply_models),
-         data = map2(data, lhoods, join_lhoods)) %>%
-  unnest(data) %>%
-  summarise_posterior()
+  train_models_indexical_with_holdout('Dialect')
+
+```
 
 ## Test cross-validated models
 
+```{r loo-test}
+
+#' @param data_and_models output of train_models_indexical_with_holdout.
+test_models_indexical_with_holdout <- function(data_and_models) {
+  
+  join_lhoods <- function(d, lhoods) {
+    lhoods %>%
+      mutate(id_ = row_number()) %>%
+      gather(model, lhood, -id_) %>%
+      inner_join(d %>% mutate(id_ = row_number()), by='id_') %>%
+      select(-id_)
+  }
+
+  summarise_posterior <- function(d) {
+    d %>%
+      group_by(Talker, Dialect, model) %>%
+      summarise(lhood = sum(lhood)) %>%     # aggregate log-lhood within talkers
+      # normalize to get posterior
+      mutate(log_posterior = lhood - log_sum_exp(lhood),
+             posterior = exp(log_posterior),
+             posterior_choice = as.numeric(posterior == max(posterior)))
+  }
+
+  data_and_models %>%
+    mutate(lhoods = map2(data_test, models, apply_models),
+           data_test = map2(data_test, lhoods, join_lhoods)) %>%
+    unnest(data_test) %>%
+    summarise_posterior()
+}
+
+posteriors_cv <- dialect_models_talker_held_out %>%
+  test_models_indexical_with_holdout()
+  
 ```
 
 ## Results
