@@ -2,8 +2,9 @@
 
 export(KL.bvnorm)
 export(KL_mods)
-export(classify_mods)
+export(classify_vowels)
 export(covar2D)
+export(formants_matrix)
 export(marginal_model_lhood)
 export(model_lhood)
 export(train_models)

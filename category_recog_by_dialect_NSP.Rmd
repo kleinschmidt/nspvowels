@@ -265,7 +265,7 @@ class_hz <-
             dialect_model,
             genderByDialect_model,
             marginal_model),
-       ~ classify_mods(nsp_vows, .y) %>% mutate(model = .x)) %>%
+       ~ classify_vowels(nsp_vows, .y) %>% mutate(model = .x)) %>%
   bind_rows()
 
 class_Ln <-
@@ -279,7 +279,7 @@ class_Ln <-
             dialect_model_Ln,
             genderByDialect_model_Ln,
             marginal_model_Ln),
-       ~ classify_mods(nsp_vows, .y) %>% mutate(model = .x)) %>%
+       ~ classify_vowels(nsp_vows, .y) %>% mutate(model = .x)) %>%
   bind_rows()
 
 
