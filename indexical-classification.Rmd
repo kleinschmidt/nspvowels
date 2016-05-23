@@ -24,7 +24,7 @@ load_all()
 
 ## data('nsp_vows', package='nspvowels')
 
-nsp_vows <- nspvowels::nsp_vows
+nsp_vows <- nspvowels::nsp_vows %>% ungroup()
 
 ```
 
@@ -222,3 +222,26 @@ nsp_vows_lob <- nspvowels::nsp_vows %>%
   ungroup()
 ```
 
+# Just do it all
+
+```{r all-of-em}
+
+datasets <- data_frame(dataset = c('Un-normalized', 'Lobanov Normalized'),
+                       data = list(nsp_vows, nsp_vows_lob))
+
+index_class <-
+  cross_d(list(dataset = datasets$dataset,
+               grouping = c('Dialect', 'Sex'))) %>%
+  left_join(datasets) %>%
+  mutate(trained = map2(data, grouping, train_models_indexical_with_holdout),
+         posteriors = map(trained, classify_indexical_with_holdout)) %>%
+  unnest(map2(posteriors, grouping,
+              ~ rename_(.x, 'group' = .y)))
+  
+index_class %>%
+  group_by(dataset, grouping, Talker) %>%
+  filter(posterior == max(posterior)) %>%
+  summarise(acc = mean(model == group)) %>%
+  summarise(acc = mean(acc))
+
+```
