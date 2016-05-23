@@ -2,6 +2,7 @@
 
 export(KL.bvnorm)
 export(KL_mods)
+export(classify_indexical_with_holdout)
 export(classify_vowels)
 export(covar2D)
 export(formants_matrix)
