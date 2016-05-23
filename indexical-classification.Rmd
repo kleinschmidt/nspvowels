@@ -36,9 +36,6 @@ dialect_model_list <-
   do(model=list_models(., 'Vowel')) %>%
   list_models('Dialect')
 
-names(dialect_model_list)
-names(dialect_model_list[[1]])
-
 ```
 
 ### Calculate likelihood for each token
