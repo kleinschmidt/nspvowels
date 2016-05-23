@@ -31,13 +31,10 @@ For each group, want a list of models whose names are the classes. In this case,
 
 ```{r list-models}
 
-list_models <- function(d, model_field, group_field)
-  set_names(d[[model_field]], d[[group_field]])
-
 dialect_model_list <-
   dialect_models %>%
-  do(models=list_models(., 'model', 'Vowel')) %>%
-  list_models('models', 'Dialect')
+  do(model=list_models(., 'Vowel')) %>%
+  list_models('Dialect')
 
 names(dialect_model_list)
 names(dialect_model_list[[1]])
