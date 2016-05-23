@@ -1,6 +1,14 @@
 ---
 title: Inferring socio-indexical features
 author: Dave Kleinschmidt
+output:
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
 ---
 
 ```{r preamble, cache=FALSE, message=FALSE, warning=FALSE, error=FALSE}
@@ -12,12 +20,16 @@ library(magrittr)
 library(tidyr)
 library(dplyr)
 library(devtools)
+library(phonR) # contains functions for vowel normalization
 load_all()
 
-data('nsp_vows', package='nspvowels')
+## data('nsp_vows', package='nspvowels')
+
+nsp_vows <- nspvowels::nsp_vows
 
 ```
 
+# The easy, bad way
 
 ## Train models
 
@@ -98,6 +110,8 @@ posteriors <- d %>% join_lhoods(log_lhoods) %>% summarise_posterior()
 
 ```
 
+## Results
+
 ```{r talker-classification, fig.width=11, fig.height=5}
 
 posteriors %>%
@@ -128,11 +142,11 @@ posteriors %>%
 
 ```
 
+# The harder, but correct way
 
+That works pretty well (unsurprisingly, beacuse we're double dipping: testing on training data).
 
-Works pretty well (unsurprisingly, beacuse we're double dipping: testing on training data).
-
-## Cross-validation
+## Train models with cross-validation
 
 Need to hold out each talker from training set.
 
@@ -166,9 +180,13 @@ posteriors_cv <-
   unnest(data) %>%
   summarise_posterior()
 
+## Test cross-validated models
+
 ```
 
-Not too impressive. It looks like a lot of people are getting absorbed into Midland.
+## Results
+
+### Single-talker classification
 
 ```{r loo-talker-classification, fig.width=11, fig.height=5}
 
@@ -180,6 +198,10 @@ posteriors_cv %>%
 
 ```
 
+Not too impressive. It looks like a lot of people are getting absorbed into Midland. Maybe not terribly surprising, given that 
+
+
+### Dialect confusion
 
 ```{r loo-dialect-confusion-mat}
 
@@ -201,6 +223,8 @@ posteriors_cv %>%
 
 ```
 
+Even though accuracy is above chance, it's not significantly so:
+
 ```{r loo-dialect-correct}
 
 binomial_ci = function(p, x) qbeta(p, sum(x)+0.5, length(x)-sum(x)+0.5)
@@ -213,3 +237,15 @@ posteriors_cv %>%
             posterior_choice_hi = binomial_ci(0.975, posterior_choice))
 
 ```
+
+# Using normalized formants
+
+The biggest differences between talkers' overall distributions come from gender, which is probably a big reason why the accuracy is so low here. Lobanov normalizing each talker's vowel space controls for most of variance from gender.
+
+```{r lobanove-normalize}
+nsp_vows_lob <- nspvowels::nsp_vows %>%
+  group_by(Talker) %>%
+  mutate_each(funs(normLobanov), F1:F2) %>%
+  ungroup()
+```
+
