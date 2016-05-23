@@ -44,23 +44,6 @@ Now we need to apply each of the Dialect models to the data.
 
 ```{r test-models}
 
-get_formants <- function(d)
-  d %>%
-    select_("F1", "F2") %>%
-    as.matrix()
-
-#' @param data data.frame with columns F1 and F2
-#' @param mods vowel-space model (list of single-vowel models)
-#' @return vector with marginal likelihood for each row in data.
-marginal_model_lhood <- function(data, mods) {
-  mods %>%
-    map(~ model_lhood(., get_formants(data))) %>%
-                                        # list of vowels lhood vectors
-    do.call(rbind, .) %>%               # vowel x token matrix
-    apply(., 2, mean)                   # marginal token lhoods
-}
-
-
 d <- nsp_vows %>% ungroup()
 
 #' @param data data.frame with columns F1 and F2 (passed to marginal_model_lhood)
@@ -69,7 +52,7 @@ d <- nsp_vows %>% ungroup()
 #' in data
 apply_models <- function(data, model_list) {
   model_list %>%
-    map(~ marginal_model_lhood(data, .)) %>%
+    map(~ marginal_model_lhood(formants_matrix(data), .)) %>%
     ## do.call(rbind, .) %>%
     ## t() %>%                            # matrix with Dialect as cols
     as_data_frame()                       # data frame with Dialect as cols
