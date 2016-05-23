@@ -224,7 +224,7 @@ nsp_vows_lob <- nspvowels::nsp_vows %>%
 
 # Just do it all
 
-```{r all-of-em}
+```{r all-of-em, cache=TRUE}
 
 datasets <- data_frame(dataset = c('Un-normalized', 'Lobanov Normalized'),
                        data = list(nsp_vows, nsp_vows_lob))
@@ -237,11 +237,37 @@ index_class <-
          posteriors = map(trained, classify_indexical_with_holdout)) %>%
   unnest(map2(posteriors, grouping,
               ~ rename_(.x, 'group' = .y)))
+
+```
+
+```{r acc-summary, results='asis'}
   
 index_class %>%
   group_by(dataset, grouping, Talker) %>%
   filter(posterior == max(posterior)) %>%
   summarise(acc = mean(model == group)) %>%
-  summarise(acc = mean(acc))
+  summarise(acc = mean(acc)) %>%
+  knitr::kable()
+
+
+```
+
+```{r acc-plots}
+
+chance <-
+  index_class %>%
+  group_by(grouping, group) %>%
+  summarise() %>%
+  tally() %>%
+  mutate(chance = 1/n)
+
+index_class %>%
+  group_by(dataset, grouping, Talker) %>%
+  filter(group == model) %>%
+  ggplot(aes(x=dataset, y=posterior_choice)) +
+  geom_hline(data = chance, aes(yintercept = chance)) +
+  geom_bar(stat='summary', fun.y=mean) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot) +
+  facet_grid(.~grouping)
 
 ```
