@@ -13,14 +13,13 @@ output:
 
 ```{r preamble, cache=FALSE, message=FALSE, warning=FALSE, error=FALSE}
 
-knitr::opts_chunk$set(cache=TRUE)
-
 library(ggplot2)
 library(magrittr)
 library(tidyr)
 library(dplyr)
-library(devtools)
 library(phonR) # contains functions for vowel normalization
+
+library(devtools)
 load_all()
 
 ## data('nsp_vows', package='nspvowels')
@@ -63,24 +62,13 @@ Now we need to apply each of the Dialect models to the data.
 
 d <- nsp_vows %>% ungroup()
 
-#' @param data data.frame with columns F1 and F2 (passed to marginal_model_lhood)
-#' @param model_list list of models to calculate likelihood
-#' @return data.frame of likelihoods, with one column per model, one row per row
-#' in data
-apply_models <- function(data, model_list) {
-  model_list %>%
-    map(~ marginal_model_lhood(., formants_matrix(data))) %>%
-    ## do.call(rbind, .) %>%
-    ## t() %>%                            # matrix with Dialect as cols
-    as_data_frame()                       # data frame with Dialect as cols
-}
-
-log_lhoods <- apply_models(ungroup(nsp_vows), dialect_model_list)
+log_lhoods <- apply_model_list(ungroup(nsp_vows), dialect_model_list,
+                               marginal_model_lhood)
 
 ```
 
 ```{r grouped-lhood, eval=FALSE}
-## Wrap in a tbl_df (to accomodate grouping
+## (Could also wrap in a tbl_df (to accomodate grouping))
 data_frame(data=list(d), models=list(dialect_model_list)) %>%
   mutate(log_lhoods = map2(data, models, apply_models))
 ```
@@ -148,68 +136,11 @@ That works pretty well (unsurprisingly, beacuse we're double dipping: testing on
 
 ## Train models with cross-validation
 
-Need to hold out each talker from training set.
+Need to hold out each talker from training set, and train the models on the data from the other talkers.
 
-```{r train-test-split}
-
-#' Split data into training and test sets
-#'
-#' @param d data frame
-#' @param holdout quoted name of column that defines train/test splits.
-#' @param index quoted name of column(s) to group training data by. optional, will
-#' be preserved in output (and added as grouping to training data).
-#' @return data frame with columns `data_train`, `data_test`, one for each level of
-#' holdout and index (if specified), which are also included. `data_test` has the
-#' corresponding subset of the input data, and `data_train` has the rest.
-train_test_split <- function(d, holdout, index=NULL) {
-
-  d %>%
-    group_by_(holdout) %>%
-    summarise() %>%
-    purrr::by_row(~ anti_join(d, ., by=holdout) %>%
-                    group_by_(.dots=index)
-                  ) %>%
-    rename_('data_train' = '.out') %>%
-    inner_join(d %>%
-                 group_by_(holdout, .dots=index) %>%
-                 nest(.key='data_test'),
-               by = holdout)
-
-}
-
-```
-
-
-```{r loo-train}
-
-group_ = "Dialect"
+```{r loo-train, cache=TRUE}
 
 # Train model for each talker, holding their data out.
-# TODO: can be made much more efficient by only re-training the model for the
-# matching dialect.
-train_models_indexical_with_holdout <- function(d, index,
-                                                category='Vowel', holdout='Talker') {
-
-  d %>%
-    train_test_split(holdout=holdout, index=index) %>%
-    mutate(models = map(data_train,
-                        ~ .x %>%
-                          train_models() %>%
-                          by_slice(~ list_models(., category), .to='model') %>%
-                          list_models(index)))
-
-
-##   d %>%
-##     group_by_(holdout) %>%
-##     summarise() %>%
-##     purrr::by_row(~ anti_join(d, ., by=holdout) %>% # hold out data from each talker
-##                     group_by_(index) %>%
-##                     train_models() %>%
-##                     do(model=list_models(., category)) %>%
-##                     list_models(index)) %>%
-##     rename(models = .out)
-
-}
 
 dialect_models_talker_held_out <- 
   nsp_vows %>%
@@ -219,38 +150,10 @@ dialect_models_talker_held_out <-
 
 ## Test cross-validated models
 
-```{r loo-test}
-
-#' @param data_and_models output of train_models_indexical_with_holdout.
-test_models_indexical_with_holdout <- function(data_and_models) {
-  
-  join_lhoods <- function(d, lhoods) {
-    lhoods %>%
-      mutate(id_ = row_number()) %>%
-      gather(model, lhood, -id_) %>%
-      inner_join(d %>% mutate(id_ = row_number()), by='id_') %>%
-      select(-id_)
-  }
-
-  summarise_posterior <- function(d) {
-    d %>%
-      group_by(Talker, Dialect, model) %>%
-      summarise(lhood = sum(lhood)) %>%     # aggregate log-lhood within talkers
-      # normalize to get posterior
-      mutate(log_posterior = lhood - log_sum_exp(lhood),
-             posterior = exp(log_posterior),
-             posterior_choice = as.numeric(posterior == max(posterior)))
-  }
-
-  data_and_models %>%
-    mutate(lhoods = map2(data_test, models, apply_models),
-           data_test = map2(data_test, lhoods, join_lhoods)) %>%
-    unnest(data_test) %>%
-    summarise_posterior()
-}
+```{r loo-test, cache=TRUE}
 
 posteriors_cv <- dialect_models_talker_held_out %>%
-  test_models_indexical_with_holdout()
+  classify_indexical_with_holdout()
   
 ```
 
@@ -312,7 +215,7 @@ posteriors_cv %>%
 
 The biggest differences between talkers' overall distributions come from gender, which is probably a big reason why the accuracy is so low here. Lobanov normalizing each talker's vowel space controls for most of variance from gender.
 
-```{r lobanove-normalize}
+```{r lobanov-normalize}
 nsp_vows_lob <- nspvowels::nsp_vows %>%
   group_by(Talker) %>%
   mutate_each(funs(normLobanov), F1:F2) %>%
