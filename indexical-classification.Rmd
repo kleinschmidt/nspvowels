@@ -6,6 +6,9 @@ author: Dave Kleinschmidt
 ```{r preamble, cache=FALSE, message=FALSE, warning=FALSE, error=FALSE}
 
 library(ggplot2)
+library(magrittr)
+library(tidyr)
+library(dplyr)
 library(devtools)
 load_all()
 
@@ -72,17 +75,25 @@ data_frame(data=list(d), models=list(dialect_model_list)) %>%
 
 ```{r aggregate-lhood}
 
-posteriors <- 
+join_lhoods <- function(d, lhoods) {
   lhoods %>%
-  mutate(id_ = row_number()) %>%
-  gather(model, lhood, -id_) %>%
-  inner_join(d %>% mutate(id_ = row_number())) %>%
-  group_by(Talker, Dialect, model) %>%
-  summarise(lhood = sum(lhood)) %>%     # aggregate log-lhood within talkers
-                                        # normalize to get posterior
-  mutate(log_posterior = lhood - log_sum_exp(lhood),
-         posterior = exp(log_posterior),
-         posterior_choice = as.numeric(posterior == max(posterior)))
+    mutate(id_ = row_number()) %>%
+    gather(model, lhood, -id_) %>%
+    inner_join(d %>% mutate(id_ = row_number()), by='id_')
+}
+
+summarise_posterior <- function(d) {
+  d %>%
+    group_by(Talker, Dialect, model) %>%
+    summarise(lhood = sum(lhood)) %>%     # aggregate log-lhood within talkers
+    # normalize to get posterior
+    mutate(log_posterior = lhood - log_sum_exp(lhood),
+           posterior = exp(log_posterior),
+           posterior_choice = as.numeric(posterior == max(posterior)))
+}
+
+posteriors <- d %>% join_lhoods(lhoods) %>% summarise_posterior()
+
 
 # continuous posterior probability
 posteriors %>%
