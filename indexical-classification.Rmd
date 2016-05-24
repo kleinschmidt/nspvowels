@@ -9,6 +9,7 @@ output:
     toc_float:
       collapsed: false
       smooth_scroll: true
+    code_folding: hide
 ---
 
 ```{r preamble, cache=FALSE, message=FALSE, warning=FALSE, error=FALSE}
@@ -28,7 +29,157 @@ nsp_vows <- nspvowels::nsp_vows %>% ungroup()
 
 ```
 
-# The easy, bad way
+# Indexical classification
+
+## Data: Normalized vs. non-normalized
+
+The biggest differences between talkers' overall distributions come from gender, which is going to obscure systematic differences between dialect groups. Lobanov normalizing each talker's vowel space controls for most of variance from gender. So we'll do the analysis using both normalized and non-normalized data.
+
+```{r lobanov-normalize}
+nsp_vows_lob <- nspvowels::nsp_vows %>%
+  group_by(Talker) %>%
+  mutate_each(funs(normLobanov), F1:F2) %>%
+  ungroup()
+```
+
+## Train and test models
+
+```{r train-test-models-cv, cache=TRUE}
+
+datasets <- data_frame(dataset = c('Un-normalized', 'Lobanov Normalized'),
+                       data = list(nsp_vows, nsp_vows_lob))
+
+index_models <-
+  cross_d(list(dataset = datasets$dataset,
+               grouping = c('Dialect', 'Sex'))) %>%
+  left_join(datasets) %>%
+  mutate(trained = map2(data, grouping, train_models_indexical_with_holdout),
+         posteriors = map(trained, classify_indexical_with_holdout))
+
+index_class <-
+  index_models %>%
+  unnest(map2(posteriors, grouping,
+              ~ rename_(.x, 'group' = .y)))
+
+```
+
+## Results {.tabset .tabset-fade}
+
+With the exception of dialect on un-normalized vowels, accuracy is reasonably good (well above chance in the other cases).  Even (surprisingly) for decoding gender with normalized vowels. The problem with un-normalized dialect classification appears to be that just about everyone gets lumped into Midland.
+
+It's hard to read too much into the confusions since the sample size is so small (eight talkers per group). But, with that caveat in mind, the accuracy is best (around 50%) for Mid-Atlantic, North, and South. West is often confused for New England and South, 
+
+### Overall accuracy
+
+```{r acc-summary, results='asis'}
+
+binomial_ci = function(p, x) qbeta(p, sum(x)+0.5, length(x)-sum(x)+0.5)
+
+index_class %>%
+  group_by(grouping, dataset, Talker) %>%
+  filter(posterior == max(posterior)) %>%
+  summarise(acc = mean(model == group)) %>%
+  summarise(acc_mean = mean(acc),
+            acc_lo = binomial_ci(0.025, acc),
+            acc_hi = binomial_ci(0.975, acc)) %>%
+  knitr::kable(digits=2)
+
+```
+
+```{r acc-plots, fig.width=4.3, fig.height=4.3}
+
+agg_color <- 'red'
+
+chance <-
+  index_class %>%
+  group_by(grouping, group) %>%
+  summarise() %>%
+  tally() %>%
+  mutate(chance = 1/n)
+
+index_class %>%
+  group_by(dataset, grouping, Talker) %>%
+  filter(group == model) %>%
+  ggplot(aes(x=dataset, y=posterior)) +
+  geom_hline(data = chance, aes(yintercept = chance),
+             linetype=3, color=agg_color) +
+  ## geom_bar(stat='summary', fun.y=mean) +
+  geom_point(position=position_jitter(w=0.5), alpha=0.2) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot, color=agg_color) +
+  facet_grid(.~grouping, scales='free', space='free') +
+  labs(y = 'Posterior probability of correct group') +
+  theme(axis.text.x = element_text(angle=20, hjust=1))
+
+```
+
+### Accuracy by group
+
+```{r acc-by-group-summary, results='asis'}
+
+binomial_ci = function(p, x) qbeta(p, sum(x)+0.5, length(x)-sum(x)+0.5)
+
+index_class %>%
+  group_by(grouping, dataset, group, Talker) %>%
+  filter(posterior == max(posterior)) %>%
+  summarise(acc = mean(model == group)) %>%
+  summarise(acc_mean = mean(acc),
+            acc_lo = binomial_ci(0.025, acc),
+            acc_hi = binomial_ci(0.975, acc)) %>%
+  knitr::kable(digits=2)
+
+```
+
+```{r acc-by-group-plots, fig.width=8, fig.height=4.3}
+
+index_class %>%
+  group_by(dataset, grouping, Talker) %>%
+  filter(group == model) %>%
+  ggplot(aes(x=group, y=posterior)) +
+  geom_hline(data = chance, aes(yintercept = chance),
+             linetype=3, color=agg_color) +
+  ## geom_bar(stat='summary', fun.y=mean) +
+  geom_point(position=position_jitter(w=0.5), alpha=0.2) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot, color=agg_color) +
+  facet_grid(.~grouping+dataset, scales='free', space='free') +
+  labs(y = 'Posterior probability of correct group') +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+
+```
+
+### Dialect confusion matrices
+
+```{r dialect-confusion-mats, fig.width=8, fig.height=4.3}
+
+index_class %>%
+  filter(grouping == 'Dialect') %>%
+  group_by(group, dataset, model) %>%
+  summarise(posterior = mean(posterior)) %>%
+  ggplot(aes(x=group, y=model, fill=posterior)) +
+  geom_tile() +
+  coord_equal() +
+  facet_grid(.~dataset) +
+  theme(axis.text = element_text(angle=45, hjust=1))
+
+```
+
+### Single-talker dialect classification
+
+```{r talker-dialect-classification, fig.width=11, fig.height=3.1}
+
+index_class %>%
+  filter(grouping == 'Dialect') %>%
+  ggplot(aes(x=Talker, y=model, fill=posterior)) +
+  geom_tile() +
+  facet_grid(dataset ~ group, scales='free_x') +
+  coord_equal()
+
+```
+
+
+
+# Appendix: the danger of double dipping
+
+It's important to not test on training data, especially when your sample size is small. In this case, that's because if you include a talker's data when you train the group-level models, group-level distributions for that talker's group are much more similar to that talker's own distributions.
 
 ## Train models
 
@@ -127,147 +278,5 @@ posteriors %>%
   ggplot(aes(x=Dialect, y=model, fill=posterior_choice)) +
   geom_tile() +
   coord_equal()
-
-```
-
-# The harder, but correct way
-
-That works pretty well (unsurprisingly, beacuse we're double dipping: testing on training data).
-
-## Train models with cross-validation
-
-Need to hold out each talker from training set, and train the models on the data from the other talkers.
-
-```{r loo-train, cache=TRUE}
-
-# Train model for each talker, holding their data out.
-
-dialect_models_talker_held_out <- 
-  nsp_vows %>%
-  train_models_indexical_with_holdout('Dialect')
-
-```
-
-## Test cross-validated models
-
-```{r loo-test, cache=TRUE}
-
-posteriors_cv <- dialect_models_talker_held_out %>%
-  classify_indexical_with_holdout()
-  
-```
-
-## Results
-
-### Single-talker classification
-
-```{r loo-talker-classification, fig.width=11, fig.height=5}
-
-posteriors_cv %>%
-  ggplot(aes(x=Talker, y=model, fill=posterior)) +
-  geom_tile() +
-  coord_equal() +
-  facet_wrap(~ Dialect, scales='free')
-
-```
-
-Not too impressive. It looks like a lot of people are getting absorbed into Midland. Maybe not terribly surprising, given that 
-
-
-### Dialect confusion
-
-```{r loo-dialect-confusion-mat}
-
-# continuous posterior probability
-posteriors_cv %>%
-  group_by(Dialect, model) %>%
-  summarise(posterior = mean(posterior)) %>%
-  ggplot(aes(x=Dialect, y=model, fill=posterior)) +
-  geom_tile() +
-  coord_equal()
-
-# categorical choice
-posteriors_cv %>%
-  group_by(Dialect, model) %>%
-  summarise(posterior_choice = mean(posterior_choice)) %>%
-  ggplot(aes(x=Dialect, y=model, fill=posterior_choice)) +
-  geom_tile() +
-  coord_equal()
-
-```
-
-Even though accuracy is above chance, it's not significantly so:
-
-```{r loo-dialect-correct}
-
-binomial_ci = function(p, x) qbeta(p, sum(x)+0.5, length(x)-sum(x)+0.5)
-
-posteriors_cv %>%
-  filter(Dialect == model) %>%
-  ungroup() %>%
-  summarise(posterior_choice_mean = mean(posterior_choice),
-            posterior_choice_lo = binomial_ci(0.025, posterior_choice),
-            posterior_choice_hi = binomial_ci(0.975, posterior_choice))
-
-```
-
-# Using normalized formants
-
-The biggest differences between talkers' overall distributions come from gender, which is probably a big reason why the accuracy is so low here. Lobanov normalizing each talker's vowel space controls for most of variance from gender.
-
-```{r lobanov-normalize}
-nsp_vows_lob <- nspvowels::nsp_vows %>%
-  group_by(Talker) %>%
-  mutate_each(funs(normLobanov), F1:F2) %>%
-  ungroup()
-```
-
-# Just do it all
-
-```{r all-of-em, cache=TRUE}
-
-datasets <- data_frame(dataset = c('Un-normalized', 'Lobanov Normalized'),
-                       data = list(nsp_vows, nsp_vows_lob))
-
-index_class <-
-  cross_d(list(dataset = datasets$dataset,
-               grouping = c('Dialect', 'Sex'))) %>%
-  left_join(datasets) %>%
-  mutate(trained = map2(data, grouping, train_models_indexical_with_holdout),
-         posteriors = map(trained, classify_indexical_with_holdout)) %>%
-  unnest(map2(posteriors, grouping,
-              ~ rename_(.x, 'group' = .y)))
-
-```
-
-```{r acc-summary, results='asis'}
-  
-index_class %>%
-  group_by(dataset, grouping, Talker) %>%
-  filter(posterior == max(posterior)) %>%
-  summarise(acc = mean(model == group)) %>%
-  summarise(acc = mean(acc)) %>%
-  knitr::kable()
-
-
-```
-
-```{r acc-plots}
-
-chance <-
-  index_class %>%
-  group_by(grouping, group) %>%
-  summarise() %>%
-  tally() %>%
-  mutate(chance = 1/n)
-
-index_class %>%
-  group_by(dataset, grouping, Talker) %>%
-  filter(group == model) %>%
-  ggplot(aes(x=dataset, y=posterior_choice)) +
-  geom_hline(data = chance, aes(yintercept = chance)) +
-  geom_bar(stat='summary', fun.y=mean) +
-  geom_linerange(stat='summary', fun.data=mean_cl_boot) +
-  facet_grid(.~grouping)
 
 ```
