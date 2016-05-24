@@ -1,8 +1,82 @@
-library(purrr)
-library(dplyr)
-library(tidyr)
+#' @import purrr
+#' @import dplyr
+#' @import tidyr
+NULL
 
-model_lhood <- function(mod, dat) mvtnorm::dmvnorm(dat, mod$mu, mod$Sigma)
+#' Numerically stable sum of logged nubmers
+#'
+#' @param x a numeric vector of logged values.
+#' @return log of the sum of the exponentiated entries in x.
+log_sum_exp <- function(x) {
+  max_x <- max(x)
+  log(sum(exp(x - max_x))) + max_x
+}
+#' Numerically stable mean of logged numbers
+#'
+#' Use for, e.g., calculating marginal log-likelihood
+#'
+#' @param x a numeric vector of logged values
+#' @return the log of the mean of the exponentiated entries in x.
+log_mean_exp <- function(x) log_sum_exp(x) - log(length(x))
+
+
+#' Likelihood of data under one vowel's model
+#'
+#' @param mod multivariate normal model (list with mean vector mu and covariance
+#' matrix Sigma)
+#' @param dat matrix with observations in rows and dimensions in columns, passed to
+#' mvtnorm::mvnorm.
+#'
+#' @export
+model_lhood <- function(mod, dat, ...) mvtnorm::dmvnorm(dat, mod$mu, mod$Sigma, ...)
+
+#' Marginal likelihood of data under mixture model
+#'
+#' Calls \link{\code{model_lhood}} on each model and takes the average (assumes
+#' equal prior/mixing weights)
+#'
+#' @param mods list of models in mixture.
+#' @param data matrix with observations in rows and dimensions in columns
+#' @param log =TRUE returns log likelihood (default)
+#' @param ... additional arguments passed nspvowels::model_lhood (mvtnorm::dmvnorm)
+#' @return vector with marginal likelihood for each row in data.
+#'
+#' @export
+marginal_model_lhood <- function(mods, data, log=TRUE, ...) {
+  if (log) agg_fun = log_mean_exp
+  else     agg_fun = mean
+
+  mods %>%
+    map(~ model_lhood(., data, log=log, ...)) %>%
+                                        # list of vowels (log)lhood vectors
+    do.call(rbind, .) %>%               # vowel x token matrix
+    apply(., 2, agg_fun)                # marginal token lhoods
+}
+
+
+#' @param data data.frame with columns F1 and F2 (passed to marginal_model_lhood)
+#' @param model_list list of models to calculate likelihood
+#' @param lhood_fun likelihood function
+#' @return data.frame of likelihoods, with one column per model, one row per row
+#' in data
+apply_model_list <- function(data, model_list, lhood_fun) {
+  model_list %>%
+    map(~ lhood_fun(., formants_matrix(data))) %>%
+    ## do.call(rbind, .) %>%
+    ## t() %>%                            # matrix with Dialect as cols
+    as_data_frame()                       # data frame with Dialect as cols
+}
+
+
+#' Convert data frame of models to named list
+#'
+#' @param d data.frame of models
+#' @param names_col name of column to be used for names
+#' @param model_col ='model' name of column with models
+#' @return a named list of models
+list_models <- function(d, names_col, model_field='model')
+  set_names(d[[model_field]], d[[names_col]]) %>% as.list()
+
 
 #' Use trained models to classify observed formant values
 #'
@@ -17,8 +91,8 @@ model_lhood <- function(mod, dat) mvtnorm::dmvnorm(dat, mod$mu, mod$Sigma)
 #' in `model_class`, and correctness in `correct`.
 #'
 #' @export
-classify_mods <- function(data, models,
-                          formants=names(models$model[[1]]$mu)) {
+classify_vowels <- function(data, models,
+                            formants=names(models$model[[1]]$mu)) {
 
   model_groups <- groups(models)
   data <- data %>% group_by_(.dots = model_groups)
@@ -26,7 +100,7 @@ classify_mods <- function(data, models,
   ## make a named list of vowel models for each group
   model_lists <-
     models %>%
-    do(models = purrr::set_names(.$model, .$Vowel))
+    do(models = list_models(., 'Vowel'))
 
   ## A more efficient implementation than rowwise: get a matrix of all the data in
   ## a group that draws on the same models, to take advantage of vectorization
@@ -57,4 +131,41 @@ classify_mods <- function(data, models,
     unnest(data, model_class) %>%
     mutate(correct = model_class == Vowel)
   
+}
+
+
+
+
+#' Classify test data with cross-validated models
+#'
+#' See \code{\link{train_models_indexical_with_holdout}}.
+#' 
+#' @param data_and_models output of train_models_indexical_with_holdout.
+#' @return Data frame with one row per combination of data row and model, with
+#'   columns corresponding to the held-out and grouping variables, plus model,
+#'   lhood (total log-likelihood of data under model), log_posterior, posterior,
+#'   and posterior_choice (1 for the MAP model and 0 otherwise)
+#'
+#' @export
+classify_indexical_with_holdout <- function(data_and_models) {
+
+  lhoods_to_posterior <- function(lhoods) {
+    lhoods %>%
+      group_by_('model') %>%
+      summarise(lhood = sum(lhood)) %>%     # aggregate log-lhood within talkers
+      # normalize to get posterior
+      mutate(log_posterior = lhood - log_sum_exp(lhood),
+             posterior = exp(log_posterior),
+             posterior_choice = as.numeric(posterior == max(posterior)))
+  }
+
+  data_and_models %>%
+    mutate(lhoods = map2(data_test, models,
+                         ~ apply_model_list(.x, .y, marginal_model_lhood)),
+           posteriors = map(lhoods,
+                            . %>%
+                              gather(model, lhood, everything()) %>%
+                              lhoods_to_posterior())) %>%
+    unnest(posteriors)
+
 }

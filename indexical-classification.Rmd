@@ -1,0 +1,295 @@
+---
+title: Inferring socio-indexical features
+author: Dave Kleinschmidt
+output:
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+```{r preamble, cache=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+
+library(ggplot2)
+library(magrittr)
+library(tidyr)
+library(dplyr)
+library(phonR) # contains functions for vowel normalization
+
+library(devtools)
+load_all()
+
+## data('nsp_vows', package='nspvowels')
+
+nsp_vows <- nspvowels::nsp_vows %>% ungroup()
+
+```
+
+# Indexical classification
+
+## Data: Normalized vs. non-normalized
+
+The biggest differences between talkers' overall distributions come from gender, which is going to obscure systematic differences between dialect groups. Lobanov normalizing each talker's vowel space controls for most of variance from gender. So we'll do the analysis using both normalized and non-normalized data.
+
+```{r lobanov-normalize}
+nsp_vows_lob <- nspvowels::nsp_vows %>%
+  group_by(Talker) %>%
+  mutate_each(funs(normLobanov), F1:F2) %>%
+  ungroup()
+```
+
+## Train and test models {.tabset .tabset-fade}
+
+### Methods
+
+
+
+1. For each talker, split data into __test set__ (only that talker's data) and __training set__ (everything but that talker's data)
+2. Train models on training set: For each Dialect/Gender, compute each Vowel's mean and covariance matrix. This gives a list of vowel space mixture models for each Dialect/Gender.
+3. Test models on test set. For each Dialect/Gender model $g$:
+    * Compute the _marignal likelihood_ of each test observation $x_i$, $p(x_i | g)$, by taking the average likelihood of $x_i$ under each Vowel $j$: $p(x_i | g) = \sum_j p(x_i | \mathrm{Vowel}=j, g) \frac{1}{N_j}$
+    * The overall likelihood of group $g$ is then the product of the individual test observation likelihoods $p(x | g) = \prod_i p(x_i | g)$.
+    * The posterior probability of group $g$ is then proportional to this likelihood (assuming equal prior on the groups), and the actual posterior is computed by normalizing the likelihoods to sum to 1: $p(g | x) = \frac{p(x | g)}{\sum_g p(x|g)}$
+
+
+### Run it
+
+```{r train-test-models-cv, cache=TRUE}
+
+datasets <- data_frame(dataset = c('Un-normalized', 'Lobanov Normalized'),
+                       data = list(nsp_vows, nsp_vows_lob))
+
+index_models <-
+  cross_d(list(dataset = datasets$dataset,
+               grouping = c('Dialect', 'Sex'))) %>%
+  left_join(datasets) %>%
+  mutate(trained = map2(data, grouping, train_models_indexical_with_holdout),
+         posteriors = map(trained, classify_indexical_with_holdout))
+
+index_class <-
+  index_models %>%
+  unnest(map2(posteriors, grouping,
+              ~ rename_(.x, 'group' = .y)))
+
+```
+
+## Results {.tabset .tabset-fade}
+
+With the exception of dialect on un-normalized vowels, accuracy is reasonably good (well above chance in the other cases).  Even (surprisingly) for decoding gender with normalized vowels. The problem with un-normalized dialect classification appears to be that just about everyone gets lumped into Midland.
+
+It's hard to read too much into the confusions since the sample size is so small (eight talkers per group). But, with that caveat in mind, the accuracy is best (around 50%) for Mid-Atlantic, North, and South. West is often confused for New England and South, 
+
+### Overall accuracy
+
+```{r acc-summary, results='asis', echo=FALSE}
+
+binomial_ci = function(p, x) qbeta(p, sum(x)+0.5, length(x)-sum(x)+0.5)
+
+index_class %>%
+  group_by(grouping, dataset, Talker) %>%
+  filter(posterior == max(posterior)) %>%
+  summarise(acc = mean(model == group)) %>%
+  summarise(acc_mean = mean(acc),
+            acc_lo = binomial_ci(0.025, acc),
+            acc_hi = binomial_ci(0.975, acc)) %>%
+  knitr::kable(digits=2)
+
+```
+
+```{r acc-plots, fig.width=4.3, fig.height=4.3, echo=FALSE}
+
+agg_color <- 'red'
+
+chance <-
+  index_class %>%
+  group_by(grouping, group) %>%
+  summarise() %>%
+  tally() %>%
+  mutate(chance = 1/n)
+
+index_class %>%
+  group_by(dataset, grouping, Talker) %>%
+  filter(group == model) %>%
+  ggplot(aes(x=dataset, y=posterior)) +
+  geom_hline(data = chance, aes(yintercept = chance),
+             linetype=3, color=agg_color) +
+  ## geom_bar(stat='summary', fun.y=mean) +
+  geom_point(position=position_jitter(w=0.5), alpha=0.2) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot, color=agg_color) +
+  facet_grid(.~grouping, scales='free', space='free') +
+  labs(y = 'Posterior probability of correct group') +
+  theme(axis.text.x = element_text(angle=20, hjust=1))
+
+```
+
+### Accuracy by group
+
+```{r acc-by-group-summary, results='asis', echo=FALSE}
+
+binomial_ci = function(p, x) qbeta(p, sum(x)+0.5, length(x)-sum(x)+0.5)
+
+index_class %>%
+  group_by(grouping, dataset, group, Talker) %>%
+  filter(posterior == max(posterior)) %>%
+  summarise(acc = mean(model == group)) %>%
+  summarise(acc_mean = mean(acc),
+            acc_lo = binomial_ci(0.025, acc),
+            acc_hi = binomial_ci(0.975, acc)) %>%
+  knitr::kable(digits=2)
+
+```
+
+```{r acc-by-group-plots, fig.width=8, fig.height=4.3, echo=FALSE}
+
+index_class %>%
+  group_by(dataset, grouping, Talker) %>%
+  filter(group == model) %>%
+  ggplot(aes(x=group, y=posterior)) +
+  geom_hline(data = chance, aes(yintercept = chance),
+             linetype=3, color=agg_color) +
+  ## geom_bar(stat='summary', fun.y=mean) +
+  geom_point(position=position_jitter(w=0.5), alpha=0.2) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot, color=agg_color) +
+  facet_grid(.~grouping+dataset, scales='free', space='free') +
+  labs(y = 'Posterior probability of correct group') +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+
+```
+
+### Dialect confusion matrices
+
+```{r dialect-confusion-mats, fig.width=8, fig.height=4.3, echo=FALSE}
+
+index_class %>%
+  filter(grouping == 'Dialect') %>%
+  group_by(group, dataset, model) %>%
+  summarise(posterior = mean(posterior)) %>%
+  ggplot(aes(x=group, y=model, fill=posterior)) +
+  geom_tile() +
+  coord_equal() +
+  facet_grid(.~dataset) +
+  theme(axis.text = element_text(angle=45, hjust=1))
+
+```
+
+### Single-talker dialect classification
+
+```{r talker-dialect-classification, fig.width=11, fig.height=3.1, echo=FALSE}
+
+index_class %>%
+  filter(grouping == 'Dialect') %>%
+  ggplot(aes(x=Talker, y=model, fill=posterior)) +
+  geom_tile() +
+  facet_grid(dataset ~ group, scales='free_x') +
+  coord_equal()
+
+```
+
+
+
+# Appendix: the danger of double dipping
+
+It's important to not test on training data, especially when your sample size is small. In this case, that's because if you include a talker's data when you train the group-level models, group-level distributions for that talker's group are much more similar to that talker's own distributions.
+
+## Train models
+
+```{r train-models}
+
+dialect_models <- nsp_vows %>% group_by(Dialect) %>% train_models()
+
+```
+
+
+## Test models
+
+### Get models in analogous form to Vowel classification
+
+For each group, want a list of models whose names are the classes. In this case, the "group" is the whole dataset, each "model" is a list of single-vowel models, and the class is Dialect.
+
+```{r list-models}
+
+dialect_model_list <-
+  dialect_models %>%
+  do(model=list_models(., 'Vowel')) %>%
+  list_models('Dialect')
+
+```
+
+### Calculate likelihood for each token
+
+Now we need to apply each of the Dialect models to the data.
+
+```{r test-models}
+
+d <- nsp_vows %>% ungroup()
+
+log_lhoods <- apply_model_list(ungroup(nsp_vows), dialect_model_list,
+                               marginal_model_lhood)
+
+```
+
+```{r grouped-lhood, eval=FALSE}
+## (Could also wrap in a tbl_df (to accomodate grouping))
+data_frame(data=list(d), models=list(dialect_model_list)) %>%
+  mutate(log_lhoods = map2(data, models, apply_models))
+```
+
+### Aggregate likelihoods across tokens for each talker
+
+```{r aggregate-lhood}
+
+join_lhoods <- function(d, lhoods) {
+  lhoods %>%
+    mutate(id_ = row_number()) %>%
+    gather(model, lhood, -id_) %>%
+    inner_join(d %>% mutate(id_ = row_number()), by='id_')
+}
+
+summarise_posterior <- function(d) {
+  d %>%
+    group_by(Talker, Dialect, model) %>%
+    summarise(lhood = sum(lhood)) %>%     # aggregate log-lhood within talkers
+    # normalize to get posterior
+    mutate(log_posterior = lhood - log_sum_exp(lhood),
+           posterior = exp(log_posterior),
+           posterior_choice = as.numeric(posterior == max(posterior)))
+}
+
+posteriors <- d %>% join_lhoods(log_lhoods) %>% summarise_posterior()
+
+```
+
+## Results
+
+```{r talker-classification, fig.width=11, fig.height=5, echo=FALSE}
+
+posteriors %>%
+  ggplot(aes(x=Talker, y=model, fill=posterior)) +
+  geom_tile() +
+  coord_equal() +
+  facet_wrap(~ Dialect, scales='free')
+
+```
+
+```{r dialect-confusion-mat, echo=FALSE}
+
+# continuous posterior probability
+posteriors %>%
+  group_by(Dialect, model) %>%
+  summarise(posterior = mean(posterior)) %>%
+  ggplot(aes(x=Dialect, y=model, fill=posterior)) +
+  geom_tile() +
+  coord_equal()
+
+# categorical choice
+posteriors %>%
+  group_by(Dialect, model) %>%
+  summarise(posterior_choice = mean(posterior_choice)) %>%
+  ggplot(aes(x=Dialect, y=model, fill=posterior_choice)) +
+  geom_tile() +
+  coord_equal()
+
+```
