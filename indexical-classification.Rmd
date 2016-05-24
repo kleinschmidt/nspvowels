@@ -9,7 +9,6 @@ output:
     toc_float:
       collapsed: false
       smooth_scroll: true
-    code_folding: hide
 ---
 
 ```{r preamble, cache=FALSE, message=FALSE, warning=FALSE, error=FALSE}
@@ -42,7 +41,21 @@ nsp_vows_lob <- nspvowels::nsp_vows %>%
   ungroup()
 ```
 
-## Train and test models
+## Train and test models {.tabset .tabset-fade}
+
+### Methods
+
+
+
+1. For each talker, split data into __test set__ (only that talker's data) and __training set__ (everything but that talker's data)
+2. Train models on training set: For each Dialect/Gender, compute each Vowel's mean and covariance matrix. This gives a list of vowel space mixture models for each Dialect/Gender.
+3. Test models on test set. For each Dialect/Gender model $g$:
+    * Compute the _marignal likelihood_ of each test observation $x_i$, $p(x_i | g)$, by taking the average likelihood of $x_i$ under each Vowel $j$: $p(x_i | g) = \sum_j p(x_i | \mathrm{Vowel}=j, g) \frac{1}{N_j}$
+    * The overall likelihood of group $g$ is then the product of the individual test observation likelihoods $p(x | g) = \prod_i p(x_i | g)$.
+    * The posterior probability of group $g$ is then proportional to this likelihood (assuming equal prior on the groups), and the actual posterior is computed by normalizing the likelihoods to sum to 1: $p(g | x) = \frac{p(x | g)}{\sum_g p(x|g)}$
+
+
+### Run it
 
 ```{r train-test-models-cv, cache=TRUE}
 
@@ -71,7 +84,7 @@ It's hard to read too much into the confusions since the sample size is so small
 
 ### Overall accuracy
 
-```{r acc-summary, results='asis'}
+```{r acc-summary, results='asis', echo=FALSE}
 
 binomial_ci = function(p, x) qbeta(p, sum(x)+0.5, length(x)-sum(x)+0.5)
 
@@ -86,7 +99,7 @@ index_class %>%
 
 ```
 
-```{r acc-plots, fig.width=4.3, fig.height=4.3}
+```{r acc-plots, fig.width=4.3, fig.height=4.3, echo=FALSE}
 
 agg_color <- 'red'
 
@@ -114,7 +127,7 @@ index_class %>%
 
 ### Accuracy by group
 
-```{r acc-by-group-summary, results='asis'}
+```{r acc-by-group-summary, results='asis', echo=FALSE}
 
 binomial_ci = function(p, x) qbeta(p, sum(x)+0.5, length(x)-sum(x)+0.5)
 
@@ -129,7 +142,7 @@ index_class %>%
 
 ```
 
-```{r acc-by-group-plots, fig.width=8, fig.height=4.3}
+```{r acc-by-group-plots, fig.width=8, fig.height=4.3, echo=FALSE}
 
 index_class %>%
   group_by(dataset, grouping, Talker) %>%
@@ -148,7 +161,7 @@ index_class %>%
 
 ### Dialect confusion matrices
 
-```{r dialect-confusion-mats, fig.width=8, fig.height=4.3}
+```{r dialect-confusion-mats, fig.width=8, fig.height=4.3, echo=FALSE}
 
 index_class %>%
   filter(grouping == 'Dialect') %>%
@@ -164,7 +177,7 @@ index_class %>%
 
 ### Single-talker dialect classification
 
-```{r talker-dialect-classification, fig.width=11, fig.height=3.1}
+```{r talker-dialect-classification, fig.width=11, fig.height=3.1, echo=FALSE}
 
 index_class %>%
   filter(grouping == 'Dialect') %>%
@@ -251,7 +264,7 @@ posteriors <- d %>% join_lhoods(log_lhoods) %>% summarise_posterior()
 
 ## Results
 
-```{r talker-classification, fig.width=11, fig.height=5}
+```{r talker-classification, fig.width=11, fig.height=5, echo=FALSE}
 
 posteriors %>%
   ggplot(aes(x=Talker, y=model, fill=posterior)) +
@@ -261,7 +274,7 @@ posteriors %>%
 
 ```
 
-```{r dialect-confusion-mat}
+```{r dialect-confusion-mat, echo=FALSE}
 
 # continuous posterior probability
 posteriors %>%
