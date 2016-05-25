@@ -200,21 +200,12 @@ We can factor the joint posterior $p(v_i, g | x_i)$ into things we already know 
 
 $p(v, g | x) = p(v | x, g) p(g | x)$
 
-That is, the probability of each vowel, given group (from the original analysis), weighted by how likely the group is given the tokens (from the first part here).
+That is, the probability of each vowel, given group (from the original analysis), weighted by how likely the group is given the tokens (from the first part here). We can compute each of these separately and them combine.
 
-```{r joint-factorized, eval=FALSE}
+#### Conditional posterior of each vowel, given group
 
-## trained dialect models for each talker's split
-trained <- index_models$trained[[1]]
-
-## need to get
-## 1. Posterior prob for each dialect model (entry in models)
-posteriors <- index_models$posteriors[[1]]
-
-## 2. Likelihood of each token under each vowel for each dialect model
-trained %>%
-  unnest(map(models, . %>% unlist_models('group_model')))
-
+```{r vowel-given-group, cache=TRUE}
+## 1. Likelihood of each token under each vowel for each dialect model
 #' Compute posterior vowel category conditional on group
 #'
 #' Applies classify_vowels to test data for each group_model.
@@ -236,6 +227,13 @@ compute_vowel_post_given_group <- function(data_test, group_models) {
     rename(vowel_model=model)
 }
 
+```
+
+#### Marginal posterior of group
+
+```{r group-marginal, cache=TRUE}
+
+## 2. Posterior prob for each dialect model (entry in models)
 #' Compute marginal posterior of each group from join vowel/group likelihood
 #'
 #' @param group_vowel_posteriors data frame with columns group_model, Vowel,
@@ -253,6 +251,12 @@ compute_group_marginal_post <- function(group_vowel_posteriors) {
            posterior = exp(log_posterior))
 }
 
+```
+
+#### Combine to get joint posterior
+
+```{r joint-posterior, cache=TRUE}
+
 #' Combine vowel | group posteriors with group posteriors
 #'
 #' @param group_vowel_posteriors vowel posterior probabilities conditional on
@@ -268,11 +272,17 @@ compute_joint_vowel_group_post <- function(group_vowel_posteriors, group_posteri
     select(group_model, group_log_posterior=log_posterior) %>%
     inner_join(group_vowel_posteriors, by = 'group_model') %>%
     mutate(log_posterior = log(posterior) + group_log_posterior,
-           posterior = exp(posterior))
+           posterior = exp(log_posterior))
 }
+```
 
 
-joint_group_vowel_post <-
+
+#### Do it
+
+```{r compute-joint-posteriors, cache=TRUE, dependson=c(-1,-2,-3)}
+
+trained_to_joint_post <- function(trained) {
   trained %>%
   mutate(group_vowel_posteriors = map2(data_test, models,
                                        compute_vowel_post_given_group),
@@ -281,46 +291,15 @@ joint_group_vowel_post <-
          ) %>%
   unnest(map2(group_vowel_posteriors, group_posteriors,
               compute_joint_vowel_group_post))
+}
+  
 
+index_models %<>%
+  mutate(joint_posteriors = map(trained, trained_to_joint_post))
 
-
-joint_group_vowel_post %>%
-  group_by(Dialect, Talker) %>%
-  group_by(Vowel, vowel_model, Token, add=TRUE) %>%
-  ## marginalize out group_model:
-  summarise(log_posterior = log_sum_exp(log_posterior),
-            posterior = exp(log_posterior)) %>%
-  ## get cross-categorization probabilities for each vowel category (averaging
-  ## over tokens):
-  summarise(posterior = mean(posterior),
-            log_posterior = log_mean_exp(log_posterior)) %>%
-  mutate(vowel_model = factor(vowel_model, levels = levels(Vowel))) %>%
-  ggplot(aes(x=Vowel, y=vowel_model, fill=posterior)) +
-  geom_tile() + coord_equal() +
-  scale_fill_gradient(limits=c(0,1)) +
-  facet_wrap(~ Dialect)
-
-
-
-joint_group_vowel_post %>%
-  filter(Talker == first(Talker)) %>%
-  group_by(Vowel, vowel_model, Token) %>%
-  ## marginalize out group_model:
-  summarise(log_posterior = log_sum_exp(log_posterior),
-            posterior = exp(log_posterior)) %>%
-  ## get cross-categorization probabilities for each vowel category (averaging
-  ## over tokens):
-  summarise(posterior = mean(posterior),
-            log_posterior = log_mean_exp(log_posterior)) %>%
-  mutate(vowel_model = factor(vowel_model, levels = levels(Vowel))) %>%
-  ggplot(aes(x=Vowel, y=vowel_model, fill=posterior)) +
-  geom_tile() + coord_equal() +
-  scale_fill_gradient(limits=c(0,1))
-
-
-
-                                   
-
+joint_class <-
+  index_models %>%
+  unnest(map2(joint_posteriors, grouping, ~ rename_(.x, 'group'=.y)))
 
 ```
 
@@ -332,6 +311,57 @@ Alternatively, you could just do it directly, by evaluating the likelihood of ea
 $p(v, g | x) \propto p(x | v, g) p(v, g)$
 
 The normalization is the tricky bit (since the effect of $g$ is pooled across all the tokens from a talker), and I think the factorized way is a bit easier.
+
+## Results {.tabset}
+
+These show the _marginal_ probability of categorizing tokens, which is computed by marginalizing out group (e.g., averaging the categorization probabilities under each group, weighed by the probability of that group given all the tokens).
+
+### Vowel confusion matrices
+
+Vowel confusion matrices, split out by grouping factor (Dialect or Sex) and subgroups. 
+
+```{r joint-dialect-vowel-confusions, fig.width=10, cache=TRUE, dependson='compute-joint-posteriors'}
+
+marginal_vowel_class <- joint_class %>%
+  group_by(grouping, dataset, group, Talker) %>%
+  group_by(Vowel, vowel_model, Token, add=TRUE) %>%
+  ## marginalize out group_model:
+  summarise(log_posterior = log_sum_exp(log_posterior),
+            posterior = exp(log_posterior))
+
+marginal_vowel_class %>%
+  ## get cross-categorization probabilities for each vowel category (averaging
+  ## over tokens):
+  summarise(posterior = mean(posterior),
+            log_posterior = log_mean_exp(log_posterior)) %>%
+  mutate(vowel_model = factor(vowel_model, levels = levels(Vowel))) %>%
+  ggplot(aes(x=Vowel, y=vowel_model, fill=posterior)) +
+  geom_tile() + coord_equal() +
+  scale_fill_gradient(limits=c(0,1)) +
+  facet_grid(dataset ~ grouping+group)
+
+```
+
+### Vowel accuracy
+
+Average probability of correct recognition when jointly inferring 
+
+```{r joint-group-vowel-accuracy, cache=TRUE, dependson='compute-joint-posteriors'}
+
+pd <- function() position_dodge(w=0.9)
+
+marginal_vowel_class %>%
+  group_by(grouping, dataset, group, Talker, Vowel, Token) %>%
+  filter(posterior == max(posterior)) %>%
+  mutate(accuracy = vowel_model == Vowel) %>%
+  group_by(grouping, dataset, group, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, color=Vowel, fill=Vowel, group=grouping)) +
+  geom_bar(aes(alpha=grouping), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset ~ .)
+
+```
 
 # Appendix: the danger of double dipping
 
