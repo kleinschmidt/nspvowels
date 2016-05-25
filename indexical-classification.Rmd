@@ -188,7 +188,150 @@ index_class %>%
 
 ```
 
+# Joint vowel-indexical classification
 
+## Methods {.tabset .tabset-fade}
+
+We want to infer both the Vowel $v_i$ and the indexical group $g$, given some observations $x_i$. There are at least two ways to do this. Either way, we want to do it separately for each talker, making sure to use the right training/test data.
+
+### Factorized
+
+We can factor the joint posterior $p(v_i, g | x_i)$ into things we already know how to do:
+
+$p(v, g | x) = p(v | x, g) p(g | x)$
+
+That is, the probability of each vowel, given group (from the original analysis), weighted by how likely the group is given the tokens (from the first part here).
+
+```{r joint-factorized, eval=FALSE}
+
+## trained dialect models for each talker's split
+trained <- index_models$trained[[1]]
+
+## need to get
+## 1. Posterior prob for each dialect model (entry in models)
+posteriors <- index_models$posteriors[[1]]
+
+## 2. Likelihood of each token under each vowel for each dialect model
+trained %>%
+  unnest(map(models, . %>% unlist_models('group_model')))
+
+#' Compute posterior vowel category conditional on group
+#'
+#' Applies classify_vowels to test data for each group_model.
+#'
+#' @param data_test test data to calculate posteriors for
+#' @param group_models named list of group models, each of which is a named list
+#'   of vowel models
+#' @return data frame with one row per data_test row x group x vowel model, with
+#'   added columns group_model (name of group model), vowel_model (name of vowel
+#'   model), lhood p(x | vowel_model, group_model), posterior (p(vowel_model |
+#'   x, group_model)).
+compute_vowel_post_given_group <- function(data_test, group_models) {
+  group_models %>%
+    map(~ unlist_models(., 'Vowel')) %>%
+    map(~ classify_vowels(data_test, .)) %>%
+    data_frame(group_model=names(.),
+               x=.) %>%
+    unnest(x) %>%
+    rename(vowel_model=model)
+}
+
+#' Compute marginal posterior of each group from join vowel/group likelihood
+#'
+#' @param group_vowel_posteriors data frame with columns group_model, Vowel,
+#'   Token, lhood. (that is, output from compute_vowel_post_given_group).
+#' @return data frame with one row per group, and columns group_model,
+#'   log_lhood, log_posterior, and posterior
+compute_group_marginal_post <- function(group_vowel_posteriors) {
+  group_vowel_posteriors %>%
+    group_by(group_model, Vowel, Token) %>%
+    mutate(log_lhood =log(lhood)) %>%
+    summarise(log_lhood = log_mean_exp(log_lhood)) %>%
+    group_by(group_model) %>%
+    summarise(log_lhood = sum(log_lhood)) %>%
+    mutate(log_posterior = log_lhood - log_sum_exp(log_lhood),
+           posterior = exp(log_posterior))
+}
+
+#' Combine vowel | group posteriors with group posteriors
+#'
+#' @param group_vowel_posteriors vowel posterior probabilities conditional on
+#'   group, in the form of a data frame with at least columns vowel_model,
+#'   group_model, and posterior (e.g., output of compute_vowel_post_given_group)
+#' @param group_posterior marginal group posterior probabilities, in the form of
+#'   a data frame with columns group_model and log_posterior (e.g., output of
+#'   compute_group_marginal_posterior)
+#' @return a data frame with the joint posterior of vowel category and group, in
+#'   posterior and log_posterior.
+compute_joint_vowel_group_post <- function(group_vowel_posteriors, group_posteriors) {
+  group_posteriors %>%
+    select(group_model, group_log_posterior=log_posterior) %>%
+    inner_join(group_vowel_posteriors, by = 'group_model') %>%
+    mutate(log_posterior = log(posterior) + group_log_posterior,
+           posterior = exp(posterior))
+}
+
+
+joint_group_vowel_post <-
+  trained %>%
+  mutate(group_vowel_posteriors = map2(data_test, models,
+                                       compute_vowel_post_given_group),
+         group_posteriors = map(group_vowel_posteriors,
+                                compute_group_marginal_post)
+         ) %>%
+  unnest(map2(group_vowel_posteriors, group_posteriors,
+              compute_joint_vowel_group_post))
+
+
+
+joint_group_vowel_post %>%
+  group_by(Dialect, Talker) %>%
+  group_by(Vowel, vowel_model, Token, add=TRUE) %>%
+  ## marginalize out group_model:
+  summarise(log_posterior = log_sum_exp(log_posterior),
+            posterior = exp(log_posterior)) %>%
+  ## get cross-categorization probabilities for each vowel category (averaging
+  ## over tokens):
+  summarise(posterior = mean(posterior),
+            log_posterior = log_mean_exp(log_posterior)) %>%
+  mutate(vowel_model = factor(vowel_model, levels = levels(Vowel))) %>%
+  ggplot(aes(x=Vowel, y=vowel_model, fill=posterior)) +
+  geom_tile() + coord_equal() +
+  scale_fill_gradient(limits=c(0,1)) +
+  facet_wrap(~ Dialect)
+
+
+
+joint_group_vowel_post %>%
+  filter(Talker == first(Talker)) %>%
+  group_by(Vowel, vowel_model, Token) %>%
+  ## marginalize out group_model:
+  summarise(log_posterior = log_sum_exp(log_posterior),
+            posterior = exp(log_posterior)) %>%
+  ## get cross-categorization probabilities for each vowel category (averaging
+  ## over tokens):
+  summarise(posterior = mean(posterior),
+            log_posterior = log_mean_exp(log_posterior)) %>%
+  mutate(vowel_model = factor(vowel_model, levels = levels(Vowel))) %>%
+  ggplot(aes(x=Vowel, y=vowel_model, fill=posterior)) +
+  geom_tile() + coord_equal() +
+  scale_fill_gradient(limits=c(0,1))
+
+
+
+                                   
+
+
+```
+
+
+### Directly
+
+Alternatively, you could just do it directly, by evaluating the likelihood of each vowel + dialect and then normalizing appropriately. 
+
+$p(v, g | x) \propto p(x | v, g) p(v, g)$
+
+The normalization is the tricky bit (since the effect of $g$ is pooled across all the tokens from a talker), and I think the factorized way is a bit easier.
 
 # Appendix: the danger of double dipping
 
