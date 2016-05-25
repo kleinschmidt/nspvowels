@@ -15,7 +15,8 @@ Depends:
     dplyr,
     tidyr,
     mvtnorm,
-    psych
+    psych,
+    assertthat
 License: MIT
 LazyData: true
 RoxygenNote: 5.0.1
