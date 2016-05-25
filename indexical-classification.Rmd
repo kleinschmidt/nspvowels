@@ -303,7 +303,6 @@ joint_class <-
 
 ```
 
-
 ### Directly
 
 Alternatively, you could just do it directly, by evaluating the likelihood of each vowel + dialect and then normalizing appropriately. 
@@ -311,6 +310,35 @@ Alternatively, you could just do it directly, by evaluating the likelihood of ea
 $p(v, g | x) \propto p(x | v, g) p(v, g)$
 
 The normalization is the tricky bit (since the effect of $g$ is pooled across all the tokens from a talker), and I think the factorized way is a bit easier.
+
+## Comparison to when group is known
+
+The real question is how much performance improves when you _know_ the right group. Again, it's important to evaluate this using cross validation.
+
+```{r classify-with-known-group}
+
+#' Classify vowels assuming group is known
+#'
+#' @param trained trained models df
+#' @param grouping name of grouping column in trained
+#' @return test dataframe plus output of classify_vowels
+vowel_post_true_group <- function(trained, grouping) {
+  trained %>%
+    rename_('group' = grouping) %>%
+    mutate(model = map2(models, group, ~ .x[[.y]]) %>%
+             map(. %>% unlist_models('Vowel')),
+           vowel_class = map2(data_test, model, classify_vowels)) %>%
+    unnest(vowel_class) %>%
+    rename_(.dots = set_names('group', grouping))
+}
+
+true_group_class <-
+  index_models %>%
+  mutate(true_group_posteriors = map2(trained, grouping, vowel_post_true_group)) %>%
+  unnest(map2(true_group_posteriors, grouping, ~ rename_(.x, 'group'=.y)))
+
+```
+
 
 ## Results {.tabset}
 
