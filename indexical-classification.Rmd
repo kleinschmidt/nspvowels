@@ -206,6 +206,56 @@ index_class %>%
 
 ```
 
+### Marginal classification of dialect and gender from both
+
+Accuracy is above chance for inferring both dialect and gender simultaneously, but performance is no better than in dialect alone; the change in significance is entirely due to lower levels of chance. This raises the question of whether it's easier to correctly infer dialect _alone_ when you consider separate dialect distributions for each gender.
+
+```{r marginal-dialect-gender-acc}
+
+index_class_both_marginal <- index_class %>%
+  filter(grouping == 'Dialect_Sex') %>%
+  separate(group, c('Sex', 'Dialect'), sep='_') %>%
+  separate(model, c('sex_model', 'dialect_model'), sep='_')
+
+## Dialect
+index_class_both_marginal_dialect <-
+  index_class_both_marginal %>%
+  group_by(dataset, Talker, Dialect, dialect_model) %>%
+  summarise(posterior = sum(posterior)) %>%
+  mutate(posterior_choice = posterior == max(posterior))
+
+index_class_both_marginal_dialect %>%
+  group_by(dataset, Dialect, dialect_model) %>%
+  summarise(posterior = mean(posterior)) %>%
+  ggplot(aes(x=Dialect, y=dialect_model, fill=posterior)) +
+  geom_tile() +
+  coord_equal() +
+  facet_grid(.~dataset) +
+  theme(axis.text = element_text(angle=45, hjust=1))
+
+index_class_both_marginal_dialect %>%
+  filter(Dialect == dialect_model) %>%
+  group_by(dataset) %>%
+  summarise(acc_mean = mean(posterior),
+            acc_lo = binomial_ci(0.025, posterior),
+            acc_hi = binomial_ci(0.975, posterior)) %>%
+  knitr::kable(digits=2)
+
+index_class_both_marginal_dialect %>%
+  filter(Dialect == dialect_model) %>%
+  ggplot(aes(x=dataset, y=posterior)) +
+  geom_hline(yintercept = 1/6,
+             linetype=3, color=agg_color) +
+  ## geom_bar(stat='summary', fun.y=mean) +
+  geom_point(position=position_jitter(w=0.5), alpha=0.2) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot, color=agg_color) +
+  labs(y = 'Posterior probability of correct group') +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+
+```
+
+Alas, no. Accuracy is _slightly_ higher but still not great (and not above chance for un-normalized vowels).
+
 # Joint vowel-indexical classification
 
 ## Methods {.tabset .tabset-fade}
