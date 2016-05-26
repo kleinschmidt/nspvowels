@@ -443,6 +443,8 @@ marginal_vowel_class %>%
 
 ```
 
+This is a little odd: in many (most?) cases, knowing the true group actually _hurts_ you, versus inferring the group. Also, in almost no cases does conditioning on both dialect and gender do you any good whatsoever. So it looks like the earlier analysis was purely a result of double-dipping :(  This is going to take some re-thinking for writing it up.
+
 # Appendix: the danger of double dipping
 
 It's important to not test on training data, especially when your sample size is small. In this case, that's because if you include a talker's data when you train the group-level models, group-level distributions for that talker's group are much more similar to that talker's own distributions.
