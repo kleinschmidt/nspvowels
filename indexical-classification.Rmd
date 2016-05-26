@@ -177,6 +177,22 @@ index_class %>%
 
 ```
 
+
+```{r dialect-gender-confusion-mats, fig.width=10, fig.height=5.4, echo=FALSE}
+
+index_class %>%
+  filter(grouping == 'Dialect_Sex') %>%
+  group_by(group, dataset, model) %>%
+  summarise(posterior = mean(posterior)) %>%
+  ggplot(aes(x=group, y=model, fill=posterior)) +
+  geom_tile() +
+  coord_equal() +
+  facet_grid(.~dataset) +
+  theme(axis.text = element_text(angle=45, hjust=1))
+
+```
+
+
 ### Single-talker dialect classification
 
 ```{r talker-dialect-classification, fig.width=11, fig.height=3.1, echo=FALSE}
