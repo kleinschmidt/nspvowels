@@ -445,6 +445,8 @@ vowel_acc %>%
 
 This is a little odd: in many (most?) cases, knowing the true group actually _hurts_ you, versus inferring the group. Also, in almost no cases does conditioning on both dialect and gender do you any good whatsoever. So it looks like the earlier analysis was purely a result of double-dipping :(  This is going to take some re-thinking for writing it up.
 
+At a high level, what this reflects is that talkers with the same dialect are not necessarily more similar to each other in terms of their category-specific distributions. The overall distributions (ignoring the category identity) are similar enough (that is, can decode dialect, at least from normalized formants). And it might be the case that overall similarity (again, ignoring category) is correlated with good vowel categorization, which would lead to the marginal accuracy being higher.
+
 #### Overall probability of correct recognition across vowels
 
 ```{r joint-group-accuracy, cache=TRUE, dependson='compute-joint-posteriors'}
@@ -462,6 +464,18 @@ vowel_acc %>%
   facet_grid(.~dataset)
 
 ```
+
+Another thing that jumps out: Dialect doesn't really help above Marginal, and Dialec+Gender is actually _worse_ overall than Gender.
+
+Both this and the finding that known is worse than inferred might reflect an overtraining thing. More specific groups have fewer talkers and more instability in the estimate of the true underlying distribution. Similarly, the true group has one less talker because the test talker is held out. 
+
+One way to get around this might be to use individual talker models to classify the held out talker. Then at least you're not suffering from weirdly high variance distributions that come from a small number of wildly different talkers.
+
+Finally: better performance might be achieved with a hierarchical model that infer the talker-specific distributions using a group-level prior. This would require
+
+1. Estimating the distribution of means/covariance matrices for each vowel in each group. (Either sampling or MLE/MAP estimate)
+2. Jointly estimating category labels and talker distributions under each group.
+3. ...Profit? It's not clear how the marginalization would work. Might just be best off running a Stan model for each test-training split... Simultaneously infer test talker's group, vowel categories, and parameters, along with the group-level priors. This is going to require a TON of time/storage though.
 
 ### Vowel accuracy by group
 
