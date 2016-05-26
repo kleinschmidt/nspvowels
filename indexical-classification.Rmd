@@ -583,7 +583,34 @@ talker_models %>%
 
 ```
 
-So this approach seems to be a dead end.
+So this approach seems to be a dead end: categorization will be driven nearly entirely by these two talkers.
+
+# Discussion and conclusions
+
+We've looked at the extent to which indexical and linguistic categories are mutually informative, using vowels as a test case. First, we asked how well we can infer a talker's indexical grouping (gender, dialect, or the combination of both) based on unlabeled formant values for a number of productions of each vowel category. Second, we asked how much the indexical grouping variables of gender, dialect, and the combination thereof improve vowel classification (or, conversely, hamper correct recognition when they are ignored). Third, we asked whether it was possible to _simultaneously_ infer a talker's indexical group and correctly categorize their productions at the same time.
+
+## Decoding indexical groups
+
+We investigated three levels of socio-indexical grouping: gender, dialect, and the combination of both.
+
+### Gender
+
+It's possible to decode a talker's gender with high accuracy.  For raw formant frequencies, this is unsurprising, since male talkers produce vowels with much lower formant frequencies than females. However, it's still possible to classify talkers as male or female with high (if slightly lower) accuracy even after Lobanov normalizing formant frequencies, which removes these overall differences in formant frequencies. This suggests that there are systematic differences between the distributions produced by male and female talkers. However, this might be attributable to the fact that formant frequencies might be better thought of as on a log-Hz scale, rather than the linear Hz scale on which Lobanov normalization operates.
+
+### Dialect
+
+A talker's dialect is more difficult to decode. Using un-normalized formant frequencies, performance is at chance. This is not terribly surprising, because the within-category variance from gender swamps within-category variance due to dialect, rendering dialect-specific distributions that ignore gender largely overlapping and hence hard to distinguish. Consistent with this interpretation, dialect classification using Lobanov-normalized formant frequencies is significantly greater than chance (and for raw formant frequencies). Thus, there is _some_ consistency in how dialects realize their vowels, but it's dwarfed by gender differences.
+
+TODO: classification when vowel category is KNOWN.
+
+### Dialect and gender together
+
+Along the same lines, by classifying dialect and gender simultaneously, performance is above chance, even on non-normalized formants. However, an important caveat is that performance is no better _numerically_ than when classifying dialect alone (for both normalized and raw formant frequencies); rather, chance performance is half what it is in that case.
+
+## Caveats
+
+The model used is a simplistic, "flat" model that models all tokens of a vowel in a group as coming from a single Gaussian distribution. In reality, the tokens of a single vowel are produced by a _mixture_ of talker-specific distributions. It's possible that our results here are biased as a result.
+
 
 # Appendix: the danger of double dipping
 
