@@ -517,8 +517,6 @@ talker_model_lists <-
 
 ```{r fit-talker-data}
 
-nsp_vows %>% formants_matrix()
-
 talker_lhoods <-
   talker_models %>%
   mutate(lhoods = map(model, ~ model_lhood(., nsp_vows %>% formants_matrix(),
@@ -529,6 +527,8 @@ talker_lhoods <-
   unnest(data_test)
 
 ```
+
+## Results
 
 ### Classify talkers as other talkers
 
@@ -551,7 +551,23 @@ ggplot(talker_class, aes(x=Talker, y=talker_model, fill=posterior)) +
 
 ```
 
+Something's funny here: why are `MI8` and `MI9` absorbing the vast majority of the talkers? It's because they have, on average, the broadest categories:
 
+```{r}
+
+talker_models %>%
+  mutate(sqrt_cov_dets = map_dbl(model, ~ sqrt(det(.$Sigma)))) %>%
+  group_by(Talker) %>%
+  summarise(sqrt_cov_dets = mean(sqrt_cov_dets)) %>%
+  arrange(desc(sqrt_cov_dets)) %>%
+  left_join(talker_class %>%
+              group_by(talker_model) %>%
+              summarise(mean_posterior=mean(posterior)) %>%
+              rename(Talker = talker_model))
+
+```
+
+So this approach seems to be a dead end.
 
 # Appendix: the danger of double dipping
 
