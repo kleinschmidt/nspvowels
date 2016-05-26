@@ -64,8 +64,10 @@ datasets <- data_frame(dataset = c('Un-normalized', 'Lobanov Normalized'),
 
 index_models <-
   cross_d(list(dataset = datasets$dataset,
-               grouping = c('Dialect', 'Sex'))) %>%
+               grouping = c('Dialect', 'Sex', 'Dialect_Sex', 'Marginal'))) %>%
   left_join(datasets) %>%
+  mutate(data = map(data, . %>% mutate(Marginal='all',
+                                       Dialect_Sex = paste(Dialect, Sex, sep='_')))) %>%
   mutate(trained = map2(data, grouping, train_models_indexical_with_holdout),
          posteriors = map(trained, classify_indexical_with_holdout))
 
@@ -315,7 +317,7 @@ The normalization is the tricky bit (since the effect of $g$ is pooled across al
 
 The real question is how much performance improves when you _know_ the right group. Again, it's important to evaluate this using cross validation.
 
-```{r classify-with-known-group}
+```{r classify-with-known-group, cache=TRUE, dependson='train-test-models-cv'}
 
 #' Classify vowels assuming group is known
 #'
@@ -334,8 +336,13 @@ vowel_post_true_group <- function(trained, grouping) {
 
 true_group_class <-
   index_models %>%
+  filter(grouping != 'Marginal') %>%
   mutate(true_group_posteriors = map2(trained, grouping, vowel_post_true_group)) %>%
-  unnest(map2(true_group_posteriors, grouping, ~ rename_(.x, 'group'=.y)))
+  unnest(map2(true_group_posteriors, grouping, ~ rename_(.x, 'group'=.y))) %>%
+  mutate(grouping = paste0(grouping, '_true')) %>%
+  rename(vowel_model = model)
+
+
 
 ```
 
@@ -370,6 +377,21 @@ marginal_vowel_class %>%
 
 ```
 
+Compare with when the true group for each talker is used:
+
+```{r true-group-vowel-confusions, fig.width=10, cache=TRUE}
+
+true_group_class %>%
+  group_by(grouping, dataset, group, Talker, Vowel, vowel_model) %>%
+  summarise(posterior = mean(posterior)) %>%
+  mutate(vowel_model = factor(vowel_model, levels = levels(Vowel))) %>% 
+  ggplot(aes(x=Vowel, y=vowel_model, fill=posterior)) +
+  geom_tile() + coord_equal() +
+  scale_fill_gradient(limits=c(0,1)) +
+  facet_grid(dataset ~ grouping+group)
+
+```
+
 ### Vowel accuracy
 
 Average probability of correct recognition when jointly inferring 
@@ -378,7 +400,18 @@ Average probability of correct recognition when jointly inferring
 
 pd <- function() position_dodge(w=0.9)
 
+grouping_levels <-
+  c('Marginal',
+    'Dialect',
+    'Dialect_true',
+    'Sex',
+    'Sex_true',
+    'Dialect_Sex',
+    'Dialect_Sex_true')
+
 marginal_vowel_class %>%
+  bind_rows(true_group_class) %>%
+  mutate(grouping = factor(grouping, levels=grouping_levels)) %>%
   group_by(grouping, dataset, group, Talker, Vowel, Token) %>%
   filter(posterior == max(posterior)) %>%
   mutate(accuracy = vowel_model == Vowel) %>%
@@ -388,6 +421,25 @@ marginal_vowel_class %>%
   geom_bar(aes(alpha=grouping), stat='summary', fun.y=mean, position=pd()) +
   geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
   facet_grid(dataset ~ .)
+
+```
+
+### Vowel accuracy by group
+
+```{r vowel-acc-by-group}
+
+marginal_vowel_class %>%
+  bind_rows(true_group_class) %>%
+  group_by(grouping, dataset, group, Talker, Vowel, Token) %>%
+  filter(posterior == max(posterior)) %>%
+  mutate(accuracy = vowel_model == Vowel) %>%
+  group_by(grouping, dataset, group, Talker) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=group, y=accuracy, group=grouping)) +
+  geom_point(alpha=0.2, position=position_jitter(w=0.5)) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot, color='red') +
+  facet_grid(dataset ~ grouping, space='free_x', scales='free_x') +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
 
 ```
 
