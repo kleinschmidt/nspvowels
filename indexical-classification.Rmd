@@ -363,7 +363,7 @@ For the marginal model, these two are equivalent.
 
 We can look at these in two ways: the full _confusion matrix_ of vowels, and the _probability of correct recognition_ under each scenario.
 
-```{r combine-joint-and-true}
+```{r combine-joint-and-true, cache=TRUE, dependson=c('compute-joint-posteriors','classify-with-known-group')}
 
 
 marginal_vowel_class <- joint_class %>%
@@ -491,6 +491,67 @@ vowel_acc %>%
   theme(axis.text.x = element_text(angle=45, hjust=1))
 
 ```
+
+# Classifying based on other individual talkers
+
+Lumping together productions from different talkers might be misleading if the distributions of individual talkers are very different. Ideally, we'd learn a hierarchical model (where the test talker's distributions are estimated directly based on a group prior). A simpler first step is to use single-talker distributions instead. This is basically an exemplar model at the level of talkers: each other talker is one exemplar. It's different from a standard exemplar model, I think, because working at the level of talkers introduces a dependence between individual observations: talkers are weighted according to their posterior probability given _all_ the tokens from the test talker.
+
+## Methods
+
+### Fit single talker models.
+
+```{r talker-models}
+
+talker_models <- 
+  nsp_vows %>%
+  group_by(Talker) %>%
+  train_models()
+
+talker_model_lists <-
+  talker_models %>%
+  nest() %>%
+  mutate(model = map(data, . %>% list_models('Vowel'))) %>%
+  list_models('Talker')
+
+```
+
+```{r fit-talker-data}
+
+nsp_vows %>% formants_matrix()
+
+talker_lhoods <-
+  talker_models %>%
+  mutate(lhoods = map(model, ~ model_lhood(., nsp_vows %>% formants_matrix(),
+                                           log=TRUE)),
+         data_test = map(lhoods, ~ mutate(nsp_vows, log_lhood = .x))) %>%
+  rename(talker_model = Talker, vowel_model = Vowel) %>%
+  ungroup() %>%
+  unnest(data_test)
+
+```
+
+### Classify talkers as other talkers
+
+```{r talker-class}
+
+## get p(t | x) for each talker
+talker_class <-
+  talker_lhoods  %>%
+  filter(talker_model != Talker) %>%    # remove same talker models
+  group_by(Talker, talker_model, Vowel, Token) %>%
+  summarise(log_lhood = log_mean_exp(log_lhood)) %>%
+  group_by(Talker, talker_model) %>%
+  summarise(log_lhood = sum(log_lhood)) %>%
+  mutate(log_posterior = log_lhood - log_sum_exp(log_lhood),
+         posterior = exp(log_posterior))
+
+ggplot(talker_class, aes(x=Talker, y=talker_model, fill=posterior)) +
+  geom_tile() + coord_equal()
+
+
+```
+
+
 
 # Appendix: the danger of double dipping
 
