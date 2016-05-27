@@ -422,7 +422,7 @@ true_group_class <-
 
 A sensible upper bound is provided by the recognition accuracy under the same talker's model. Again, it's important to get a cross-validated estimate of this accuracy, holding out test token data.
 
-```{r classify-same-talker}
+```{r classify-same-talker, cache=TRUE, dependson='train-test-models-cv'}
 
 classify_vowels_by_talker_cv <- function(d) {
   d %>%
@@ -532,7 +532,7 @@ vowel_class %>%
 
 #### Average probability of correct recognition for each vowel.
 
-```{r joint-group-vowel-accuracy, cache=TRUE, dependson='compute-joint-posteriors'}
+```{r joint-group-vowel-accuracy, fig.width=10, fig.height=6.6}
 
 pd <- function() position_dodge(w=0.8)
 
@@ -577,7 +577,9 @@ vowel_acc %>%
 
 ```
 
-```{r joint-group-vowel-acc-known}
+#### ...when group is known
+
+```{r joint-group-vowel-acc-known, fig.width=10, fig.height=6.6}
 
 vowel_acc %>%
   left_join(plot_groups) %>%
@@ -593,11 +595,13 @@ vowel_acc %>%
 
 ```
 
-```{r joint-group-vowel-acc-inferred}
+#### ...when group is inferred
+
+```{r joint-group-vowel-acc-inferred, fig.width=10, fig.height=6.6}
 
 vowel_acc %>%
   left_join(plot_groups) %>%
-  filter(group_is == 'Inferred' | grouping == 'Marginal') %>%
+  filter(group_is == 'Inferred' | grouping == 'Marginal' | grouping == 'Talker') %>%
   group_by(grouping, grouping_group_is, dataset, group, Talker, Vowel) %>%
   summarise(accuracy = mean(accuracy)) %>%
   ggplot(aes(x=Vowel, y=accuracy, fill=grouping, color=grouping,
@@ -668,7 +672,7 @@ Lumping together productions from different talkers might be misleading if the d
 
 ### Fit single talker models.
 
-```{r talker-models}
+```{r talker-models, cache=TRUE}
 
 talker_models <- 
   nsp_vows %>%
@@ -683,7 +687,7 @@ talker_model_lists <-
 
 ```
 
-```{r fit-talker-data}
+```{r fit-talker-data, cache=TRUE, dependson=-1}
 
 talker_lhoods <-
   talker_models %>%
@@ -700,7 +704,7 @@ talker_lhoods <-
 
 ### Classify talkers as other talkers
 
-```{r talker-class}
+```{r talker-class, cache=TRUE, dependson=-1}
 
 ## get p(t | x) for each talker
 talker_class <-
