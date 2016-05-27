@@ -432,7 +432,8 @@ classify_vowels_by_talker_cv <- function(d) {
            models_tested = map2(data_test, models_trained, classify_vowels)) %>%
     unnest(models_tested) %>%
     mutate(grouping = 'Talker',
-           group_is = 'Known') %>%
+           group_is = 'Known',
+           group = 'all') %>%
     rename(vowel_model = model)
 }
 
