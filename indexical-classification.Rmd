@@ -677,6 +677,32 @@ vowel_acc %>%
 
 ```
 
+### Socio-linguistically relevant shifts
+
+@Clopper2005 identifies a number of dialect features that they expect to show up in this data set, some of which might affect recognition performance. They are:
+
+* Northern cities shift, which affects 
+    * ae->eh, 
+    * eh->ah (this is "hud/hut"; not sure how it's coded in our data, since the coding is not the same as ARPABET apparently), 
+    * ah->ao, 
+    * ao->aa, 
+    * aa->ae.
+* Southern vowel shift:
+    * eh<->ey
+    * ih<->iy
+    * uw+ow fronting (confusable w/ what?)
+* Midland
+    * aa-ao merger
+* Mid-atlantic
+    * ao->ow(?) raising
+* Western
+    * aa-ao merger
+    * uw fronting
+* New England
+    * aa-ao merger
+
+
+
 # Classifying based on other individual talkers
 
 Lumping together productions from different talkers might be misleading if the distributions of individual talkers are very different. Ideally, we'd learn a hierarchical model (where the test talker's distributions are estimated directly based on a group prior). A simpler first step is to use single-talker distributions instead. This is basically an exemplar model at the level of talkers: each other talker is one exemplar. It's different from a standard exemplar model, I think, because working at the level of talkers introduces a dependence between individual observations: talkers are weighted according to their posterior probability given _all_ the tokens from the test talker.
@@ -818,6 +844,31 @@ nsp_vows %>%
   scale_y_reverse()
 
 ```
+
+### Overall
+
+The basic conclusion we can draw from this is that a talker's gender can be reliably inferred from their vowel productions, but it's harder to reliably determine dialect. Much of this has to do with individual variation in overall formant frequencies: gender accounts for a lot, but not all of that variation. Lobanov normalization effectively controls for this variation, and makes it possible to determine a talker's dialect with fairly good accuracy. For listeners to actually be able to do something like Lobanov normalization, all they'd need is enough samples to reliably determine the overall mean and standard deviation of a talker's formant frequencies. It's possible that vowel-intrinsic normalization methods that use f0 or F3 would be similarly effective (since these are all presumably jointly affected by the same physiological factors), and these work on a token-by-token basis. But this dataset does not include f0 or F3 so it's not possible to examine vowel-intrinsic normalization.
+
+## The utility of indexical groups for vowel categorization
+
+The second questions we're interested in is whether knowing a talker's indexical group (at different levels) improves vowel recognition.  Here again we evaluated three levels of indexical grouping: gender, dialect, and the combination thereof. 
+
+### Conclusion
+
+* Gender helps
+* Dialect doesn't (at least not with this data)
+
+Not much of a benefit from tracking dialect _for the purposes of speech recognition_, at least not overall. Most of the difficulty in categorizing vowels comes from non-dialectal variation.  Dialect might, in principle, help with some edge cases.
+
+TODO: check @Clopper2005 for specific cases to look at. 
+@Clopper2005 found that the features that are considered characteristic of these dialects were present in varying degrees across the sample of talkers, including some systematic variability by gender. Combined with the small sample size of four talkers per gender-dialect combination, it is perhaps not surprising that there's little benefit to using dialect- or dialect-plus-gender-specific distributions.
+
+
+However, there _is_ a benefit for _indexical_ recognition, as revealed by the indexical classification analysis. Dialect is tied up with class and regional origin, both of which are socially highly relevant variables that listeners quite likely are interested in.
+
+(( something something penny eckert spaces where linguistic variation doesn't matter much )).
+
+All of this suggests that listeners might track more indexical structure in variability in cue distributions than is directly beneficial for speech recognition _per se_.
 
 ## Caveats
 
