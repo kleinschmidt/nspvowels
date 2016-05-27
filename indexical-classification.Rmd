@@ -496,7 +496,7 @@ vowel_class %>%
 
 ```{r joint-group-vowel-accuracy, cache=TRUE, dependson='compute-joint-posteriors'}
 
-pd <- function() position_dodge(w=0.9)
+pd <- function() position_dodge(w=0.8)
 
 ## combine grouping and group_is to get the ordering of these right for plotting:
 ## (could use daver::paste_factors except for NA)
@@ -523,6 +523,54 @@ vowel_acc %>%
 
 ```
 
+```{r joint-group-vowel-acc-alt, eval=FALSE}
+
+## alternatively: use color for known/inferred, alpha for grouping
+vowel_acc %>%
+  left_join(plot_groups) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, fill=group_is, color=group_is,
+             group= grouping_group_is)) +
+  geom_bar(aes(alpha=grouping), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset ~ .) +
+  scale_alpha_discrete(range = c(0.1, 1))
+
+```
+
+```{r joint-group-vowel-acc-known}
+
+vowel_acc %>%
+  left_join(plot_groups) %>%
+  filter(group_is == 'Known' | grouping == 'Marginal') %>%
+  group_by(grouping, grouping_group_is, dataset, group, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, fill=grouping, color=grouping,
+             group= grouping_group_is)) +
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Probability of correct recognition of each vowel (group is known)')
+
+```
+
+```{r joint-group-vowel-acc-inferred}
+
+vowel_acc %>%
+  left_join(plot_groups) %>%
+  filter(group_is == 'Inferred' | grouping == 'Marginal') %>%
+  group_by(grouping, grouping_group_is, dataset, group, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, fill=grouping, color=grouping,
+             group= grouping_group_is)) +
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Probability of correct recognition of each vowel (group is inferred)')
+
+```
+
 This is a little odd: in many (most?) cases, knowing the true group actually _hurts_ you, versus inferring the group. Also, in almost no cases does conditioning on both dialect and gender do you any good whatsoever. So it looks like the earlier analysis was purely a result of double-dipping :(  This is going to take some re-thinking for writing it up.
 
 At a high level, what this reflects is that talkers with the same dialect are not necessarily more similar to each other in terms of their category-specific distributions. The overall distributions (ignoring the category identity) are similar enough (that is, can decode dialect, at least from normalized formants). And it might be the case that overall similarity (again, ignoring category) is correlated with good vowel categorization, which would lead to the marginal accuracy being higher.
@@ -534,14 +582,16 @@ At a high level, what this reflects is that talkers with the same dialect are no
 pd <- function() position_dodge(w=0.9)
 
 vowel_acc %>%
-  group_by(grouping, group_is, dataset, group, Talker) %>%
+  left_join(plot_groups) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group, Talker) %>%
   summarise(accuracy = mean(accuracy)) %>%
-  ggplot(aes(x=1,
+  ggplot(aes(x=dataset,
              y=accuracy, fill=grouping, color=grouping,
-             group=daver::paste_factors(grouping, group_is))) +
+             group=grouping_group_is)) + 
   geom_bar(aes(alpha=group_is), stat='summary', fun.y=mean, position=pd()) +
   geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
-  facet_grid(.~dataset)
+  lims(y=c(0,1))
+
 
 ```
 
