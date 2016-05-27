@@ -498,14 +498,28 @@ vowel_class %>%
 
 pd <- function() position_dodge(w=0.9)
 
+## combine grouping and group_is to get the ordering of these right for plotting:
+## (could use daver::paste_factors except for NA)
+plot_groups <-
+  vowel_acc %>%
+  group_by(grouping, group_is) %>%
+  summarise() %>%
+  mutate(grouping_group_is = paste(grouping, group_is, sep='_')) %>%
+  ungroup() %>%
+  mutate(grouping_group_is = factor(grouping_group_is,
+                                    levels = grouping_group_is))
+
+  
 vowel_acc %>%
-  group_by(grouping, group_is, dataset, group, Talker, Vowel) %>%
+  left_join(plot_groups) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group, Talker, Vowel) %>%
   summarise(accuracy = mean(accuracy)) %>%
   ggplot(aes(x=Vowel, y=accuracy, fill=grouping, color=grouping,
-             group=daver::paste_factors(grouping, group_is))) +
+             group= grouping_group_is)) +
   geom_bar(aes(alpha=group_is), stat='summary', fun.y=mean, position=pd()) +
   geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
-  facet_grid(dataset ~ .)
+  facet_grid(dataset ~ .) +
+  scale_alpha_discrete(range = c(0.25, 0.85))
 
 ```
 
