@@ -17,7 +17,9 @@ library(ggplot2)
 library(magrittr)
 library(tidyr)
 library(dplyr)
-library(phonR) # contains functions for vowel normalization
+
+# normalization: z-score
+norm_lobanov <- function(x) x %>% scale() %>% as.numeric()
 
 library(devtools)
 load_all()
@@ -37,7 +39,7 @@ The biggest differences between talkers' overall distributions come from gender,
 ```{r lobanov-normalize}
 nsp_vows_lob <- nspvowels::nsp_vows %>%
   group_by(Talker) %>%
-  mutate_each(funs(normLobanov), F1:F2) %>%
+  mutate_each(funs(norm_lobanov), F1:F2) %>%
   ungroup()
 ```
 
@@ -430,7 +432,8 @@ classify_vowels_by_talker_cv <- function(d) {
            models_tested = map2(data_test, models_trained, classify_vowels)) %>%
     unnest(models_tested) %>%
     mutate(grouping = 'Talker',
-           group_is = 'Known')
+           group_is = 'Known') %>%
+    rename(vowel_model = model)
 }
 
 talker_vowel_class <-
@@ -438,7 +441,7 @@ talker_vowel_class <-
   unnest(vowel_class = map(data, classify_vowels_by_talker_cv))
 
 talker_vowel_class %>%
-  filter(Vowel == model) %>%
+  filter(Vowel == vowel_model) %>%
   group_by(dataset, Vowel, Talker) %>%
   summarise(acc = mean(posterior)) %>%
   ggplot(aes(x=Vowel, y=acc)) +
