@@ -713,17 +713,31 @@ It's possible to decode a talker's gender with high accuracy.  For raw formant f
 
 ### Dialect
 
-A talker's dialect is more difficult to decode. Using un-normalized formant frequencies, performance is at chance. This is not terribly surprising, because the within-category variance from gender swamps within-category variance due to dialect, rendering dialect-specific distributions that ignore gender largely overlapping and hence hard to distinguish. Consistent with this interpretation, dialect classification using Lobanov-normalized formant frequencies is significantly greater than chance (and for raw formant frequencies). Thus, there is _some_ consistency in how dialects realize their vowels, but it's dwarfed by gender differences.
+A talker's dialect is more difficult to decode. Using un-normalized formant frequencies, performance is at chance. This is not terribly surprising, because the within-category variance from gender swamps within-category variance due to dialect, rendering dialect-specific distributions that ignore gender largely overlapping and hence hard to distinguish. Consistent with this interpretation, dialect classification using Lobanov-normalized formant frequencies is significantly greater than chance (and for raw formant frequencies). Thus, there is _some_ consistency in how dialects realize their vowels, but it's dwarfed by gender (or overall formant frequency) differences.
 
 TODO: classification when vowel category is KNOWN.
 
 ### Dialect and gender together
 
-Along the same lines, by classifying dialect and gender simultaneously, performance is above chance, even on non-normalized formants. However, an important caveat is that performance is no better _numerically_ than when classifying dialect alone (for both normalized and raw formant frequencies); rather, chance performance is half what it is in that case.
+Along the same lines, by classifying dialect and gender simultaneously, performance is above chance, even on non-normalized formants. However, an important caveat is that performance is no better _numerically_ than when classifying dialect alone (for both normalized and raw formant frequencies); rather, chance performance is half what it is in that case. And, in fact, classification of dialect alone is _still_ not greater than chance when gender is taken into account (even if it is slightly better than when gender is ignored).
+
+The persistent advantage of Lobanov-normalized input for dialect decoding is then puzzling. It's not simply a matter of controlling for overall formant frequency differences between gender. Rather, one possibility is that there is substantial individual variability in overall forman frequencies, variability that is _not_ entirely attributable to binary gender categories of male and female. 
+
+```{r gender-individ-formant-var}
+
+nsp_vows %>%
+  group_by(Talker, Sex) %>%
+  summarise_each(funs(mean), F1, F2) %>%
+  ggplot(aes(x=F2, y=F1, color=Sex, group=Talker)) +
+  geom_point() +
+  scale_x_reverse() +
+  scale_y_reverse()
+
+```
 
 ## Caveats
 
-The model used is a simplistic, "flat" model that models all tokens of a vowel in a group as coming from a single Gaussian distribution. In reality, the tokens of a single vowel are produced by a _mixture_ of talker-specific distributions. It's possible that our results here are biased as a result.
+The model used is a simplistic, "flat" model that treats all tokens of a vowel in a group as coming from a _single_ Gaussian distribution. In reality, the tokens of a single vowel are produced by a _mixture_ of talker-specific distributions. It's possible that our results here are biased as a result.
 
 
 # Appendix: the danger of double dipping
