@@ -18,6 +18,8 @@ library(magrittr)
 library(tidyr)
 library(dplyr)
 
+theme_set(theme_bw())
+
 # normalization: z-score
 norm_lobanov <- function(x) x %>% scale() %>% as.numeric()
 
@@ -530,9 +532,9 @@ vowel_class %>%
 
 ### Probability of correct recognition (accuracy)
 
-#### Average probability of correct recognition for each vowel.
+Compares recognition accuracy under the three grouping levels to baselines of the marginal distribution and talker-specific distributions.
 
-```{r joint-group-vowel-accuracy, fig.width=10, fig.height=6.6}
+```{r setup-acc-plots, echo=FALSE}
 
 pd <- function() position_dodge(w=0.8)
 
@@ -546,43 +548,15 @@ plot_groups <-
   ungroup() %>%
   mutate(grouping_group_is = factor(grouping_group_is,
                                     levels = grouping_group_is))
-
   
-vowel_acc %>%
-  left_join(plot_groups) %>%
-  group_by(grouping, group_is, grouping_group_is, dataset, group, Talker, Vowel) %>%
-  summarise(accuracy = mean(accuracy)) %>%
-  ggplot(aes(x=Vowel, y=accuracy, fill=grouping, color=grouping,
-             group= grouping_group_is)) +
-  geom_bar(aes(alpha=group_is), stat='summary', fun.y=mean, position=pd()) +
-  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
-  facet_grid(dataset ~ .) +
-  scale_alpha_discrete(range = c(0.25, 0.85))
-
-```
-
-```{r joint-group-vowel-acc-alt, eval=FALSE}
-
-## alternatively: use color for known/inferred, alpha for grouping
-vowel_acc %>%
-  left_join(plot_groups) %>%
-  group_by(grouping, group_is, grouping_group_is, dataset, group, Talker, Vowel) %>%
-  summarise(accuracy = mean(accuracy)) %>%
-  ggplot(aes(x=Vowel, y=accuracy, fill=group_is, color=group_is,
-             group= grouping_group_is)) +
-  geom_bar(aes(alpha=grouping), stat='summary', fun.y=mean, position=pd()) +
-  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
-  facet_grid(dataset ~ .) +
-  scale_alpha_discrete(range = c(0.1, 1))
-
 ```
 
 #### ...when group is known
 
-```{r joint-group-vowel-acc-known, fig.width=10, fig.height=6.6}
+```{r joint-group-vowel-acc-known, fig.width=10, fig.height=6.6, echo=FALSE}
 
 vowel_acc %>%
-  left_join(plot_groups) %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
   filter(group_is == 'Known' | grouping == 'Marginal') %>%
   group_by(grouping, grouping_group_is, dataset, group, Talker, Vowel) %>%
   summarise(accuracy = mean(accuracy)) %>%
@@ -595,12 +569,16 @@ vowel_acc %>%
 
 ```
 
+Interestingly, in basically _no_ case does knowing the dialect provide any benefit, and in fact in the majority of cases it actually _harms_ performance.  However, for normalized formants, the same is true of talker-specific models. This suggests that limited data is a big constraint on the performance of these classifiers. 
+
+For un-normalized formants, talker-specific models improve performance over nearly every other grouping. Taken together with the overall _worse_ performance of talker-specific models on normalized formants, this suggests that much of the difficulty of classifying different talkers comes from the overall higher or lower formant frequencies that talkers produce.
+
 #### ...when group is inferred
 
-```{r joint-group-vowel-acc-inferred, fig.width=10, fig.height=6.6}
+```{r joint-group-vowel-acc-inferred, fig.width=10, fig.height=6.6, echo=FALSE}
 
 vowel_acc %>%
-  left_join(plot_groups) %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
   filter(group_is == 'Inferred' | grouping == 'Marginal' | grouping == 'Talker') %>%
   group_by(grouping, grouping_group_is, dataset, group, Talker, Vowel) %>%
   summarise(accuracy = mean(accuracy)) %>%
@@ -613,6 +591,41 @@ vowel_acc %>%
 
 ```
 
+
+
+#### Comparing the two
+
+```{r joint-group-vowel-accuracy, fig.width=10, fig.height=6.6, echo=FALSE}
+vowel_acc %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, fill=grouping, color=grouping,
+             group= grouping_group_is)) +
+  geom_bar(aes(alpha=group_is), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset ~ .) +
+  scale_alpha_discrete(range = c(0.25, 0.85))
+
+```
+
+```{r joint-group-vowel-acc-alt, eval=FALSE, echo=FALSE}
+
+## alternatively: use color for known/inferred, alpha for grouping
+vowel_acc %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, fill=group_is, color=group_is,
+             group= grouping_group_is)) +
+  geom_bar(aes(alpha=grouping), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset ~ .) +
+  scale_alpha_discrete(range = c(0.1, 1))
+
+```
+
+
 This is a little odd: in many (most?) cases, knowing the true group actually _hurts_ you, versus inferring the group. Also, in almost no cases does conditioning on both dialect and gender do you any good whatsoever. So it looks like the earlier analysis was purely a result of double-dipping :(  This is going to take some re-thinking for writing it up.
 
 At a high level, what this reflects is that talkers with the same dialect are not necessarily more similar to each other in terms of their category-specific distributions. The overall distributions (ignoring the category identity) are similar enough (that is, can decode dialect, at least from normalized formants). And it might be the case that overall similarity (again, ignoring category) is correlated with good vowel categorization, which would lead to the marginal accuracy being higher.
@@ -624,7 +637,7 @@ At a high level, what this reflects is that talkers with the same dialect are no
 pd <- function() position_dodge(w=0.9)
 
 vowel_acc %>%
-  left_join(plot_groups) %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
   group_by(grouping, group_is, grouping_group_is, dataset, group, Talker) %>%
   summarise(accuracy = mean(accuracy)) %>%
   ggplot(aes(x=dataset,
