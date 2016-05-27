@@ -699,6 +699,35 @@ talker_models %>%
 
 So this approach seems to be a dead end: categorization will be driven nearly entirely by these two talkers.
 
+# Hierarchical model of talkers
+
+So far, we've used a simplified, "flat" model that treats all tokens of a vowel in a group as coming from a _single_ Gaussian distribution. In reality, the tokens for each vowel are produced by a _mixture_ of talker-specific distributions. It's possible that generalizing across talkers is hampered by ignoring this generative structure. Ideally, listeners should _combine_ distributional information from the test talker themselves with the group-level prior over talker distributions.
+
+## Model methods
+
+### Group-level prior on talkers
+
+The first step is to decide on the form of the group-level prior. A conjugate prior would make inference simpler, but makes the assumption that the uncertainty about the means is directly proportional to the covariance of the category itself, which may not be appropriate for vowels. For instance, talkers vary overall in their formant frequencies, which means that across talkers the mean F1 and F2 are strongly positively correlated. But _within_ talkers, F1 and F2 are in general weakly correlated (and sometimes _negatively_ correlated).
+
+```{r}
+
+nsp_vows %>% group_by(Vowel, Talker) %>%
+  summarise(cor = cor(F1, F2)) %>%
+  summarise(cor_within = mean(cor, na.rm=TRUE)) %>%
+  left_join(nsp_vows %>% group_by(Vowel) %>% summarise(cor_across = cor(F1, F2)),
+            by='Vowel') %>%
+  knitr::kable(digits=2)
+
+```
+
+So it behooves us to model the covariance within and between talkers separately. The natural prior for the category means is a multivariate normal, and for the covariance matrices is an Inverse-Wishart.
+
+The simplest possible situation is that we have independent priors on each vowel's distribution. This would mean that, across talkers, the mean of each category is independent of the other categories, and likewise for the covariances.
+
+A slightly more complicated model would pool estimates for cross-talker variability across categories (to, e.g., account for the fact that overall F1 and F2 are correlated across talkers). This would entail putting a hyper-prior on the category mean covariance matrices that's the same across vowels. This would introduce dependence between the means of one category with the means of others, a dependence that would (potentially) vary across groups. (But not necessarily: there could be a single hyperprior for _all_ the groups).
+
+Another similar possibility would be to model the category means as a single vector, concatenating _all_ the single-category mean vectors. This would allow for more flexibility, since the covariance between categories A and B's means could be different from the covariance between A and C's. But this would require fitting many more parameters and is probably unrealistic given the amount of data we have (just 48 talkers for approximately $11^2=121$ correlations).
+
 # Discussion and conclusions
 
 We've looked at the extent to which indexical and linguistic categories are mutually informative, using vowels as a test case. First, we asked how well we can infer a talker's indexical grouping (gender, dialect, or the combination of both) based on unlabeled formant values for a number of productions of each vowel category. Second, we asked how much the indexical grouping variables of gender, dialect, and the combination thereof improve vowel classification (or, conversely, hamper correct recognition when they are ignored). Third, we asked whether it was possible to _simultaneously_ infer a talker's indexical group and correctly categorize their productions at the same time.
