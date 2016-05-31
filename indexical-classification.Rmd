@@ -455,6 +455,46 @@ talker_vowel_class %>%
 
 ```
 
+## Controlling for smaller group sizes
+
+The more specific grouping, the fewer talkers there are in the training set, which is going to increase the variance of the group-level estimates and likely reduce accuracy. Across groups this would introduce a bias, with more specific groups having lower accuracy overall. One way to compensate for this is to sub-sample the larger groups.
+
+```{r joint-class-sub-sample}
+
+index_models <-
+  cross_d(list(dataset = datasets$dataset,
+               grouping = c('Dialect', 'Sex', 'Dialect_Sex', 'Marginal'))) %>%
+  left_join(datasets) %>%
+  mutate(data = map(data, . %>% mutate(Marginal='all',
+                                       Dialect_Sex = paste(Sex, Dialect, sep='_')))) %>%
+  mutate(trained = map2(data, grouping, train_models_indexical_with_holdout),
+         posteriors = map(trained, classify_indexical_with_holdout))
+
+d <- index_models$trained[[1]]$data_train[[1]]
+
+#' Randomly subsample data by group
+#'
+#' @param tbl tbl of data
+#' @param group (quoted) grouping variable
+#' @param n number of samples
+sample_n_group <- function(tbl, group, n) {
+  tbl %>%
+    group_by_(.dots=group) %>%
+    summarise() %>%
+    sample_n(n) %>%
+    left_join(tbl, by=group)
+}
+  
+sample_n_group(d, 'Talker', 4)
+
+retrain_subsampled <- function(data_train, n_talker = 4) {
+  
+}
+
+
+
+```
+
 
 ## Results {.tabset}
 
