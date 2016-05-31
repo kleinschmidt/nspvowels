@@ -459,59 +459,60 @@ talker_vowel_class %>%
 
 The more specific grouping, the fewer talkers there are in the training set, which is going to increase the variance of the group-level estimates and likely reduce accuracy. Across groups this would introduce a bias, with more specific groups having lower accuracy overall. One way to compensate for this is to sub-sample the larger groups.
 
-```{r joint-class-sub-sample}
-
-index_models <-
-  cross_d(list(dataset = datasets$dataset,
-               grouping = c('Dialect', 'Sex', 'Dialect_Sex', 'Marginal'))) %>%
-  left_join(datasets) %>%
-  mutate(data = map(data, . %>% mutate(Marginal='all',
-                                       Dialect_Sex = paste(Sex, Dialect, sep='_')))) %>%
-  mutate(trained = map2(data, grouping, train_models_indexical_with_holdout),
-         posteriors = map(trained, classify_indexical_with_holdout))
-
-d <- index_models$trained[[1]]$data_train[[1]]
-
-#' Randomly subsample data by group
-#'
-#' Subsampling will be done at the level of the specified variable,
-#' \emph{within} any grouping that already exists in the input tbl.
-#'
-#' @param tbl tbl of data
-#' @param group (quoted) grouping variable
-#' @param n number of samples
-#' @return A tbl with \code{n} levels of \code{group} randomly sampled within
-#'   each existing grouping level of \code{tbl} randomly sampled from
-#'   \code{tbl}. Any grouping of \code{tbl} is preserved in the return value.
-sample_n_groups <- function(tbl, group, n) {
-  tbl_groups <- tbl %>% groups() %>% as.character()
-  tbl %>%
-    group_by_(group, add=TRUE) %>%
-    summarise() %>%
-    group_by_(.dots=tbl_groups) %>%
-    sample_n(n) %>%
-    left_join(tbl, by=c(group, tbl_groups))
-}
+```{r joint-class-sub-sample, cache=TRUE}
   
 sample_n_groups(d, 'Talker', 4)
+trained <- train_models_indexical_subsample_holdout(nsp_vows, 'Sex', 3)
 
-train_models_indexical_subsample_holdout <- function(d, groups, n_subsample,
-                                                     category = 'Vowel',
-                                                     holdout = 'Talker') {
-  d %>%
-    train_test_split(holdout = holdout, groups = groups) %>%
-    mutate(data_train = map(data_train, . %>% sample_n_groups(holdout, n_subsample)),
-           models = map(data_train,
-                        ~ .x %>%
-                          train_models() %>%
-                          by_slice(~ list_models(., category), .to='model') %>%
-                          list_models(groups)))
-}
+# which subsample sizes to use for which grouping variables
+grouping_subsample_sizes <-
+  data_frame(grouping  = c("Dialect", "Sex", "Sex", "Marginal", "Marginal"),
+             subsample_size = c(4, 4, 8, 4, 8) - 1)
 
-trained <- train_models_indexical_subsample_holdout(nsp_vows, 'Sex', 4)
+index_models_subsampled <-
+  index_models %>%
+  select(dataset, grouping, data) %>%
+  right_join(grouping_subsample_sizes, by='grouping') %>%
+  mutate(trained = pmap(list(data, grouping, subsample_size),
+                        train_models_indexical_subsample_holdout))
 
 ```
 
+```{r joint-posteriors-subsampled, cache=TRUE, dependson=-1}
+
+## get joint posterior classifications
+index_models_subsampled %<>%
+  mutate(joint_posteriors = map(trained, trained_to_joint_post))
+
+```
+
+```{r check-group-sizes}
+
+## add group sizes to non-subsampled groups (for comparison)
+index_models %>%
+  select(dataset, grouping, data) %>%
+  mutate(group_size = map2_int(data, grouping, min_talker_count))
+
+## check that the group size is actually right
+min_talker_count <- function(d, grouping) {
+  d %>% group_by_(grouping, 'Talker') %>%
+    summarise() %>%
+    tally() %>%
+    select_('n') %>%
+    unlist() %>%
+    min()
+}
+
+index_models_subsampled %>%
+  select(dataset, grouping, trained, subsample_size) %>%
+  mutate(group_size = map2_int(trained, grouping,
+                               ~ map_int(.x$data_train,
+                                         partial(min_talker_count, grouping=.y)) %>%
+                                 unique())) %$%
+  assert_that(all.equal(subsample_size, group_size))
+
+
+```
 
 ## Results {.tabset}
 
