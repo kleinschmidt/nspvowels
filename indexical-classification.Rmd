@@ -761,20 +761,6 @@ vowel_acc_all_with_sizes <-
   mutate(grouping = factor(grouping, levels=grouping_levels))
 
 vowel_acc_all_with_sizes %>%
-  filter(subsample_size %in% c(3,7)) %>%
-  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
-  group_by(grouping, group_is, grouping_group_is, dataset, group,
-           subsample_size, Talker) %>%
-  summarise(accuracy = mean(accuracy)) %>%
-  ggplot(aes(x=dataset,
-             y=accuracy, fill=grouping, color=grouping,
-             group=grouping_group_is)) + 
-  geom_bar(aes(alpha=group_is), stat='summary', fun.y=mean, position=pd()) +
-  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
-  lims(y=c(0,1)) +
-  facet_grid(subsample_size~.)
-
-vowel_acc_all_with_sizes %>%
   left_join(plot_groups, by=c('grouping', 'group_is')) %>%
   group_by(grouping, group_is, grouping_group_is, dataset, group,
            subsample_size, Talker) %>%
@@ -789,6 +775,32 @@ vowel_acc_all_with_sizes %>%
   theme(axis.text.x = element_text(angle=15, hjust=1))
 
 ```
+
+What's clear here is that accuracy takes a hit when you have fewer talkers in your training set. This is clearest in the big groupings (marginal and gender), where you lose almost 10% accuracy going from the full set to 3 talkers.
+
+This suggests that the differences between grouping levels we observed before are largely an artifact. So where does this leave the comparisons across grouping levels?
+
+```{r}
+
+vowel_acc_all_with_sizes %>%
+  filter(subsample_size %in% c(3,7)) %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=dataset,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(aes(alpha=group_is), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(subsample_size~.)
+
+```
+
+At the very least, it no longer looks like more specific groupings _hurt_ you. Dialect doesn't _help_ very much (except  when you have three talkers to train on and are inferring the group, but not when you _know_ the group, which seems like its probably noise).
+
+There might still be effects for particular vowels though (see below). My summary of these is that there's something to `ae` and `eh`, but it's not super consistent. Of course, it's probably going to be more informative to look at particular dialect groups in particular, given that there are (in principle) particular vowel changes in each group.
 
 #### Three talkers
 
@@ -836,6 +848,7 @@ vowel_acc_all_with_sizes %>%
   ggtitle('Vowel accuracy with three training talkers (group inferred)')
 
 ```
+
 #### Seven talkers
 
 ##### Group is known
