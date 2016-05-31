@@ -744,6 +744,145 @@ Finally: better performance might be achieved with a hierarchical model that inf
 2. Jointly estimating category labels and talker distributions under each group.
 3. ...Profit? It's not clear how the marginalization would work. Might just be best off running a Stan model for each test-training split... Simultaneously infer test talker's group, vowel categories, and parameters, along with the group-level priors. This is going to require a TON of time/storage though.
 
+### Accuracy with subsampled talkers
+
+#### Overall
+
+```{r joint-group-acc-subsamp}
+
+vowel_acc_all_with_sizes <-
+  index_models %>%
+  select(dataset, grouping, data) %>%
+  mutate(group_size = map2_int(data, grouping, min_talker_count)) %>%
+  select(-data) %>%
+  right_join(vowel_acc) %>%
+  mutate(subsample_size = ifelse(grouping == 'Talker', 1, group_size-1)) %>%
+  bind_rows(vowel_acc_subsamp) %>%
+  mutate(grouping = factor(grouping, levels=grouping_levels))
+
+vowel_acc_all_with_sizes %>%
+  filter(subsample_size %in% c(3,7)) %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=dataset,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(aes(alpha=group_is), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(subsample_size~.)
+
+vowel_acc_all_with_sizes %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker) %>%
+  summarise(accuracy = mean(accuracy)) %>% 
+  ggplot(aes(x=grouping_group_is,
+             y=accuracy, fill=grouping, color=grouping,
+             group = subsample_size)) + 
+  geom_bar(aes(alpha=factor(subsample_size)), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(dataset ~ .) +
+  theme(axis.text.x = element_text(angle=15, hjust=1))
+
+```
+
+#### Three talkers
+
+##### Group is known
+
+```{r}
+
+## three talker subsample
+vowel_acc_all_with_sizes %>%
+  filter(subsample_size == 3,
+         group_is == 'Known' | grouping == 'Marginal') %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Vowel accuracy with three training talkers (group known)')
+
+```
+
+##### Group is inferred
+
+```{r}
+## three talker subsample
+vowel_acc_all_with_sizes %>%
+  filter(subsample_size == 3,
+         group_is == 'Inferred' | grouping == 'Marginal') %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Vowel accuracy with three training talkers (group inferred)')
+
+```
+#### Seven talkers
+
+##### Group is known
+
+```{r}
+
+## seven talker subsample
+vowel_acc_all_with_sizes %>%
+  filter(subsample_size == 7,
+         group_is == 'Known' | grouping == 'Marginal') %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Vowel accuracy with seven training talkers (group known)')
+
+```
+
+##### Group is inferred
+
+```{r}
+## seven talker subsample
+vowel_acc_all_with_sizes %>%
+  filter(subsample_size == 7,
+         group_is == 'Inferred' | grouping == 'Marginal') %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Vowel accuracy with seven training talkers (group inferred)')
+
+```
+
 ### Vowel accuracy by group
 
 ```{r vowel-acc-by-group}
