@@ -477,21 +477,34 @@ d <- index_models$trained[[1]]$data_train[[1]]
 #' @param tbl tbl of data
 #' @param group (quoted) grouping variable
 #' @param n number of samples
-sample_n_group <- function(tbl, group, n) {
+#' @return A tbl with \code{n} levels of \code{group} randomly sampled from
+#'   \code{tbl}. Any grouping of \code{tbl} is preserved in the return value
+sample_n_groups <- function(tbl, group, n) {
+  tbl_groups <- groups(tbl)
   tbl %>%
     group_by_(.dots=group) %>%
     summarise() %>%
     sample_n(n) %>%
-    left_join(tbl, by=group)
+    left_join(tbl, by=group) %>%
+    group_by_(.dots=tbl_groups)
 }
   
-sample_n_group(d, 'Talker', 4)
+sample_n_groups(d, 'Talker', 4)
 
-retrain_subsampled <- function(data_train, n_talker = 4) {
-  
+train_models_indexical_subsample_holdout <- function(d, groups, n_subsample,
+                                                     category = 'Vowel',
+                                                     holdout = 'Talker') {
+  d %>%
+    train_test_split(holdout = holdout, groups = groups) %>%
+    mutate(data_train = map(data_train, . %>% sample_n_groups(holdout, n_subsample)),
+           models = map(data_train,
+                        ~ .x %>%
+                          train_models() %>%
+                          by_slice(~ list_models(., category), .to='model') %>%
+                          list_models(groups)))
 }
 
-
+trained <- train_models_indexical_subsample_holdout(nsp_vows, 'Sex', 4)
 
 ```
 
