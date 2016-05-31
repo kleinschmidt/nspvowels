@@ -460,9 +460,6 @@ talker_vowel_class %>%
 The more specific grouping, the fewer talkers there are in the training set, which is going to increase the variance of the group-level estimates and likely reduce accuracy. Across groups this would introduce a bias, with more specific groups having lower accuracy overall. One way to compensate for this is to sub-sample the larger groups.
 
 ```{r joint-class-sub-sample, cache=TRUE}
-  
-sample_n_groups(d, 'Talker', 4)
-trained <- train_models_indexical_subsample_holdout(nsp_vows, 'Sex', 3)
 
 # which subsample sizes to use for which grouping variables
 grouping_subsample_sizes <-
@@ -484,14 +481,28 @@ index_models_subsampled <-
 index_models_subsampled %<>%
   mutate(joint_posteriors = map(trained, trained_to_joint_post))
 
+joint_class_subsampled <-
+  index_models_subsampled %>%
+  unnest(map2(joint_posteriors, grouping, ~ rename_(.x, 'group'=.y)))
+
+```
+
+```{r true-group-class-subsampled, cache=TRUE, dependson=-1}
+
+true_group_class_subsampled <-
+  joint_class_subsampled %>%
+  filter(group == group_model,
+         grouping != 'Marginal') %>%
+  group_by(dataset, grouping, Talker, group, Vowel, Token) %>%
+  mutate(log_lhood = log(lhood),
+         log_posterior = log_lhood - log_sum_exp(log_lhood),
+         posterior = exp(log_posterior),
+         posterior_choice = posterior == max(posterior)) %>%
+  mutate(group_is = 'Known')
+
 ```
 
 ```{r check-group-sizes}
-
-## add group sizes to non-subsampled groups (for comparison)
-index_models %>%
-  select(dataset, grouping, data) %>%
-  mutate(group_size = map2_int(data, grouping, min_talker_count))
 
 ## check that the group size is actually right
 min_talker_count <- function(d, grouping) {
@@ -511,6 +522,11 @@ index_models_subsampled %>%
                                  unique())) %$%
   assert_that(all.equal(subsample_size, group_size))
 
+## add group sizes to non-subsampled groups (for comparison)
+index_models %>%
+  select(dataset, grouping, data) %>%
+  mutate(group_size = map2_int(data, grouping, min_talker_count))
+
 
 ```
 
@@ -529,7 +545,8 @@ We can look at these in two ways: the full _confusion matrix_ of vowels, and the
 
 
 marginal_vowel_class <- joint_class %>%
-  group_by(grouping, dataset, group, Talker) %>%
+  bind_rows(joint_class_subsampled) %>%
+  group_by(grouping, dataset, subsample_size, group, Talker) %>%
   group_by(Vowel, Token, vowel_model, add=TRUE) %>%
   ## marginalize out group_model:
   summarise(log_posterior = log_sum_exp(log_posterior),
@@ -547,13 +564,16 @@ grouping_levels <-
     'Dialect_Sex',
     'Talker')
 
-vowel_class <-
+vowel_class_all <-
   bind_rows(marginal_vowel_class,
             true_group_class,
+            true_group_class_subsampled,
             talker_vowel_class) %>%
   mutate(grouping = factor(grouping, levels=grouping_levels),
          group_is = factor(group_is, levels=c('Inferred', 'Known')),
          vowel_model = factor(vowel_model, levels = levels(Vowel)))
+
+vowel_class <- vowel_class_all %>% filter(is.na(subsample_size))
   
 ## check that all posteriors over vowel_model sum to 1:
 vowel_class %>%
@@ -565,7 +585,11 @@ vowel_acc <-
   vowel_class %>%
   filter(posterior_choice) %>%
   mutate(accuracy = Vowel == vowel_model)
-  
+
+vowel_acc_subsamp <-
+  vowel_class_all %>%
+  filter(!is.na(subsample_size), posterior_choice) %>%
+  mutate(accuracy = Vowel == vowel_model)
 
 ```
 
