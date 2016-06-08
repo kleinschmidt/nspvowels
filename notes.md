@@ -4,8 +4,9 @@
     * Dialect and gender are both intermediate levels of grouping between full talker-specificity and language-level marginal ditsributions. 
     * But gender captures more coarse acoustic variation across talkers, while dialect is more specific.
     * Dialect isn't, on the whole, super informative about how to classify vowels, but gender is. There's a lot of consistency across dialects, and much of the inter-talker variation is due to individual frequency differences that cause global vowel space shifts. These differences are largely (but not entirely) accounted for by gender differences.
-* ...but dialect can still be _somewhat_ reliably decoded from vowels
-* Not knowing a talker's dialect or gender doesn't really hurt you that much since you can _simultaneously_ infer gender/dialect and vowel identity. (But this requires having samples from across the vowel space)
+    * ...but dialect can still be _somewhat_ reliably decoded from vowels
+* Joint inference of indexical and linguistic variables:
+    * Not knowing a talker's dialect or gender doesn't really hurt you that much since you can _simultaneously_ infer gender/dialect and vowel identity. (But this requires having samples from across the vowel space)
 * __IMPORTANT__: Lots of ways that indexical structure could be useful.
     * We know that listeners are sensitive to within-category acoustic phonetic differences. Adapting to a talker's specific distributions has benefits above and beyond reducing categorical confusions.
         * Processing is more efficient when you have a good generative model
