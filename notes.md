@@ -15,3 +15,4 @@
     * Indexical features aren't just nuisance variables, they're things that listeners also want to find out about. So to the extent that groups produce systematically different cue distributions, listeners have a good reason to track group-specific distributions, even if ignoring/not tracking doesn't lead to lots of speech perception errors.
         * So even though _most_ of the variation is due to linguistic factors (e.g., which vowel is being produced), linguistic and indexical variation are mutually informative
 * (not currently analyzed) talker vs. token as the unit of variation (indexical vs. linguistic).
+* acoustic cues and phonetic categories can be/are differentially variable across talkers, and thus differentially suited for carrying socio-indexical information. Moreover, type and degree of _structure_ can differ, too.
