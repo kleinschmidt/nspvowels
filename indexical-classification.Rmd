@@ -1068,14 +1068,9 @@ vot_by_place <-
 
 ## Models
 
-```{r train-vot-models, eval=FALSE}
+### Group-level models
 
-
-t <- train_models_indexical_with_holdout(vot_by_place$data[[1]],
-                                    groups = 'Sex',
-                                    category = 'voicing',
-                                    formants = 'vot')
-
+```{r train-vot-models, cache=TRUE}
 
 vot_index_models <-
   cross_d(list(place = vot_by_place$place,
@@ -1094,8 +1089,124 @@ vot_index_models <-
 vot_joint_class <-
   vot_index_models %>%
   unnest(map2(joint_posteriors, grouping, ~ rename_(.x, 'group'=.y)))
+
+## marginal (inferred group) classification of voicing
+vot_marginal_class <-
+  vot_joint_class %>%
+  group_by(grouping, place, group, Talker) %>%
+  group_by(voicing, phoneme, word, Token, category_model, add=TRUE) %>%
+  summarise(log_posterior = log_sum_exp(log_posterior)) %>%
+  normalize_log_probability('log_posterior') %>%
+  ungroup() %>%
+  mutate(group_is = ifelse(grouping=='Marginal',
+                           NA,
+                           'Inferred'))
+
+vot_marginal_class %>%
+  group_by(grouping, place, Talker, word, Token) %>%
+  summarise(any_choice = any(posterior_choice)) %>%
+  summary()
+
+## classification of voicing under true group
+vot_true_group_class <-
+  vot_joint_class %>%
+  filter(group == group_model,
+         grouping != 'Marginal') %>%
+  group_by(place, grouping, Talker, group, voicing, word, Token) %>%
+  normalize_probability('lhood') %>%
+  mutate(group_is = 'Known')
+
+vot_true_group_class %>%
+  group_by(grouping, place, Talker, word, Token) %>%
+  summarise(any_choice = any(posterior_choice)) %>%
+  summary()
+
 ```
 
+### Single-talker models
+
+```{r vot-talker-models}
+
+classify_voicing_by_talker_cv <- function(d, k=6) {
+  d %>%
+    group_by(Talker, voicing) %>%
+    mutate(split = ntile(runif(n()), k)) %>%  # 6-fold split
+    train_test_split(holdout='split') %>%
+    mutate(models_trained = map(data_train,
+                                . %>%
+                                  group_by(Talker) %>%
+                                  train_models(grouping = 'voicing',
+                                               formants = 'vot')),
+           models_tested = map2(data_test, models_trained,
+                                ~ classify(.x, .y, 'voicing'))) %>%
+    unnest(models_tested) %>%
+    mutate(grouping = 'Talker',
+           group_is = 'Known',
+           group = 'all') %>%
+    rename(category_model = model)
+}
+
+talker_vot_class <-
+  vot_by_place %>%
+  unnest(vowel_class = map(data, classify_voicing_by_talker_cv))
+
+
+```
+
+## Classifying indexical groups
+
+```{r vot-group-class}
+
+vot_group_class <-
+  vot_joint_class %>%
+  filter(grouping != 'Marginal') %>%
+  group_by(place, grouping, Talker, group, group_model) %>%
+  summarise(log_posterior = unique(group_log_posterior)) %>%
+  normalize_log_probability('log_posterior')
+
+vot_group_class %>%
+  filter(group == group_model) %>%
+  group_by(place, grouping, group) %>%
+  summarise(n(),
+            accuracy = mean(posterior_choice))
+
+## aggregate over place of articulation
+vot_group_class %>%
+  group_by(grouping, group, Talker, group_model) %>%
+  summarise(log_posterior = sum(log_posterior)) %>%
+  mutate(log_posterior = log_posterior - log_sum_exp(log_posterior),
+         posterior = exp(log_posterior),
+         posterior_choice = posterior == max(posterior)) %>%
+  filter(group == group_model) %>%
+  ggplot(aes(x=grouping, y=posterior)) +
+  geom_point(alpha=0.2, position='jitter') +
+  stat_summary(geom='pointrange', fun.data=mean_cl_boot, color='red')
+
+```
+
+## Classifying voicing
+
+```{r plot-voicing-classification}
+
+## combine both
+vot_class_all <- bind_rows(vot_marginal_class,
+                           vot_true_group_class,
+                           talker_vot_class)
+
+
+
+vot_class_all %>%
+  filter(group_is == 'Known' | grouping == 'Marginal',
+         category_model == voicing) %>%
+  group_by(grouping, voicing, place, phoneme, Talker) %>%
+  summarise(accuracy = mean(posterior_choice)) %>%
+  ggplot(aes(x=phoneme, y=accuracy, fill=grouping, color=grouping)) +
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1))
+
+
+```
 
 # Discussion and conclusions
 
