@@ -1125,6 +1125,8 @@ vot_true_group_class %>%
 
 ### Single-talker models
 
+To get an estimate of how much knowing an individual talker's distribution helps classifying voiced vs. voiceless stops, we use 6-fold cross-validation, dividing each talker's productions into six approximately equally sized groups. Then we compute the mean and variance of voiced and voiceless stops for five of the groups, and classify tokens from the sixth, in turn for each group. As above, this is done separately for each place of articulation, since VOT varies systematically with place of articulation.
+
 ```{r vot-talker-models}
 
 classify_voicing_by_talker_cv <- function(d, k=6) {
@@ -1154,6 +1156,8 @@ talker_vot_class <-
 ```
 
 ## Classifying indexical groups
+
+The first analysis is whether it's possible to classify a talker's age (younger or older than 40) or sex based on their VOTs alone. As with vowels, we first compute the marginal likelihood of each token under each group's model, then the likelihoods of all tokens produced by a talker to get the overall likelihood of a talker's tokens under each group.
 
 ```{r vot-group-class}
 
@@ -1203,7 +1207,8 @@ vot_class_all %>%
   ggplot(aes(x=phoneme, y=accuracy, fill=grouping, color=grouping)) +
   geom_bar(stat='summary', fun.y=mean, position=pd()) +
   geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
-  lims(y=c(0,1))
+  lims(y=c(0,1)) +
+  ggtitle('Stop voicing classification accuracy under known groups')
 
 
 ```
