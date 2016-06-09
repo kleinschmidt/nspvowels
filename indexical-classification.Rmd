@@ -289,14 +289,14 @@ That is, the probability of each vowel, given group (from the original analysis)
 #'   added columns group_model (name of group model), vowel_model (name of vowel
 #'   model), lhood p(x | vowel_model, group_model), posterior (p(vowel_model |
 #'   x, group_model)).
-compute_vowel_post_given_group <- function(data_test, group_models) {
+compute_category_post_given_group <- function(data_test, group_models) {
   group_models %>%
-    map(~ unlist_models(., 'Vowel')) %>%
-    map(~ classify_vowels(data_test, .)) %>%
+    map(~ unlist_models(., 'category')) %>%
+    map(~ classify(data_test, ., 'category')) %>%
     data_frame(group_model=names(.),
                x=.) %>%
     unnest(x) %>%
-    rename(vowel_model=model)
+    rename(category_model=model)
 }
 
 ```
@@ -333,7 +333,7 @@ compute_group_marginal_post <- function(group_vowel_posteriors) {
 #'
 #' @param group_vowel_posteriors vowel posterior probabilities conditional on
 #'   group, in the form of a data frame with at least columns vowel_model,
-#'   group_model, and posterior (e.g., output of compute_vowel_post_given_group)
+#'   group_model, and posterior (e.g., output of compute_category_post_given_group)
 #' @param group_posterior marginal group posterior probabilities, in the form of
 #'   a data frame with columns group_model and log_posterior (e.g., output of
 #'   compute_group_marginal_posterior)
@@ -356,13 +356,14 @@ compute_joint_vowel_group_post <- function(group_vowel_posteriors, group_posteri
 
 trained_to_joint_post <- function(trained) {
   trained %>%
-  mutate(group_vowel_posteriors = map2(data_test, models,
-                                       compute_vowel_post_given_group),
-         group_posteriors = map(group_vowel_posteriors,
-                                compute_group_marginal_post)
-         ) %>%
-  unnest(map2(group_vowel_posteriors, group_posteriors,
-              compute_joint_vowel_group_post))
+    mutate(group_vowel_posteriors = map2(data_test, models,
+                                         compute_category_post_given_group),
+           group_posteriors = map(group_vowel_posteriors,
+                                  compute_group_marginal_post)
+           ) %>%
+    unnest(map2(group_vowel_posteriors, group_posteriors,
+                compute_joint_vowel_group_post)) %>%
+    rename(vowel_model = category_model)
 }
   
 
