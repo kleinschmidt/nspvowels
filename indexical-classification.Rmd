@@ -1091,6 +1091,58 @@ A slightly more complicated model would pool estimates for cross-talker variabil
 
 Another similar possibility would be to model the category means as a single vector, concatenating _all_ the single-category mean vectors. This would allow for more flexibility, since the covariance between categories A and B's means could be different from the covariance between A and C's. But this would require fitting many more parameters and is probably unrealistic given the amount of data we have (just 48 talkers for approximately $11^2=121$ correlations).
 
+# Consonants
+
+Vowels show a lot of talker variability, which provides room for socio-indexical variables to add information that's helpful for comprehension. Many other contrasts do not show this level of talker variability. Voicing is one such contrast: talkers are relatively consistent in the distribution of voice onset time (VOT) they produce for voiced and unvoiced stops.
+
+Here we evaluate how informative indexical variables of gender and age are for classifying stops as voiced and unvoiced. The data comes from the Buckeye corpus of conversational speech, with VOTs for word-initial voiced and voiceless stops extracted by Wedel (DDDD).
+
+## Data
+
+```{r load-vot}
+
+library(votcorpora)
+
+vot <-
+  votcorpora::vot %>%
+  filter(source == 'buckeye') %>%
+  rename(Talker = subject,
+         Sex = sex,
+         Age = age)
+
+vot_by_place <-
+  vot %>%
+  group_by(place) %>%
+  nest()
+
+```
+
+## Models
+
+```{r train-vot-models, eval=FALSE}
+
+
+t <- train_models_indexical_with_holdout(vot_by_place$data[[1]],
+                                    groups = 'Sex',
+                                    category = 'voicing',
+                                    formants = 'vot')
+
+
+vot_index_models <-
+  cross_d(list(place = vot_by_place$place,
+               grouping = c('Marginal', 'Sex', 'Age'))) %>%
+  left_join(vot_by_place, by='place') %>%
+  mutate(data = map(data, . %>% mutate(Marginal = 'all')),
+         trained = map2(data, grouping,
+                        ~ train_models_indexical_with_holdout(.x,
+                                                              .y,
+                                                              category = 'voicing',
+                                                              formants = 'vot'))
+         )
+
+```
+
+
 # Discussion and conclusions
 
 We've looked at the extent to which indexical and linguistic categories are mutually informative, using vowels as a test case. First, we asked how well we can infer a talker's indexical grouping (gender, dialect, or the combination of both) based on unlabeled formant values for a number of productions of each vowel category. Second, we asked how much the indexical grouping variables of gender, dialect, and the combination thereof improve vowel classification (or, conversely, hamper correct recognition when they are ignored). Third, we asked whether it was possible to _simultaneously_ infer a talker's indexical group and correctly categorize their productions at the same time.
