@@ -322,7 +322,7 @@ marginalize <- function(joint, marginal_vars) {
   joint %>%
     group_by_(.dots = marginal_vars, add=TRUE) %>%
     mutate(log_lhood = log(lhood)) %>%
-    summarise(log_lhood = log_mean_exp(log_lhood))
+    summarise(log_lhood = log_sum_exp(log_lhood))
 
 }
 
