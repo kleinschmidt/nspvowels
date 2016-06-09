@@ -357,14 +357,16 @@ aggregate_lhood <- function(lhoods, hypothesis_vars) {
 
 #' Combine category | group posteriors with group posteriors
 #'
-#' @param group_category_posteriors category posterior probabilities conditional on
-#'   group, in the form of a data frame with at least columns category_model,
-#'   group_model, and posterior (e.g., output of compute_category_post_given_group)
+#' @param group_category_posteriors category posterior probabilities conditional
+#'   on group, in the form of a data frame with at least columns category_model,
+#'   group_model, and posterior (e.g., output of
+#'   compute_category_post_given_group)
 #' @param group_posterior marginal group posterior probabilities, in the form of
 #'   a data frame with columns group_model and log_posterior (e.g., output of
 #'   compute_group_marginal_posterior)
-#' @return a data frame with the joint posterior of category category and group, in
-#'   posterior and log_posterior.
+#' @return a data frame with the joint posterior of category category and group,
+#'   in posterior and log_posterior.
+#' 
 compute_joint_category_group_post <- function(group_category_posteriors, group_posteriors) {
   group_posteriors %>%
     select(group_model, group_log_posterior=log_posterior) %>%
