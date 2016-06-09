@@ -1054,7 +1054,10 @@ vot <-
   filter(source == 'buckeye') %>%
   rename(Talker = subject,
          Sex = sex,
-         Age = age)
+         Age = age_group) %>%
+  group_by(phoneme, word, Talker) %>%
+  mutate(Token = row_number()) %>%
+  ungroup()
 
 vot_by_place <-
   vot %>%
@@ -1083,9 +1086,14 @@ vot_index_models <-
                         ~ train_models_indexical_with_holdout(.x,
                                                               .y,
                                                               category = 'voicing',
-                                                              formants = 'vot'))
+                                                              formants = 'vot')),
+         joint_posteriors = map(trained,
+                                ~ trained_to_joint_post(., c('voicing', 'Token')))
          )
 
+vot_joint_class <-
+  vot_index_models %>%
+  unnest(map2(joint_posteriors, grouping, ~ rename_(.x, 'group'=.y)))
 ```
 
 
