@@ -1234,11 +1234,51 @@ vot_known_acc_all %>%
 
 ```
 
+### Advantage of talker over group-level models
+
+From the plots above, it looks like there might be a slight advantage of talker over other groups. Let's see if that's a real effect.
+
+```{r vot-groups-vs-talker}
+
+
+vot_known_acc_all %>%
+  rename(talker_id = Talker) %>%
+  select(-accuracy_logodds) %>%
+  spread(grouping, accuracy) %>%
+  gather(comparison, accuracy, Age:Sex) %>%
+  mutate(talker_advantage = Talker - accuracy) %>%
+  group_by(phoneme, comparison) %>%
+  summarise(mean(talker_advantage))
+
+
+vot_known_talker_advantage_logodds <- 
+  vot_known_acc_all %>%
+  rename(talker_id = Talker) %>%
+  select(-accuracy) %>%
+  spread(grouping, accuracy_logodds) %>%
+  gather(comparison, accuracy_logodds, Age:Sex) %>%
+  mutate(talker_advantage = Talker - accuracy_logodds)
+
+vot_known_talker_advantage_logodds %>%
+  group_by(phoneme, comparison) %>%
+  summarise_each(funs(mean = mean,
+                      ci_lo = quantile(., 0.025),
+                      ci_hi = quantile(., 0.975)),
+                 talker_advantage)
+
+ggplot(vot_known_talker_advantage_logodds,
+       aes(x=phoneme, y=talker_advantage, color=comparison)) +
+  geom_violin()
+
 
 ```
 
+It doesn't look like it. Or at least it depends on whether you code things as log odds or accuracy. There may be something going on with the cross validation (smaller sample size leads to more variable estimates of the distributions).
 
-Classifying stops as voiced or unvoiced is not substantially improved by knowing the age or sex of a talker, above and beyond the marginal distributions. However, using a talker's own distributions produces a slight but reliable improvement in accuracy over any of the group-level/marginal cue distributions (even with cross-validation). This shows that, while there is _some_ talker-level variability in VOT, it is not systematically predicted by any of the socio-indexical grouping factors we examined here. The case of sex is particularly informative: knowing a talker's sex provides a big boost in speech recognition for vowels, but no benefit for stop consonant voicing.
+## Discussion
+
+
+Classifying stops as voiced or unvoiced is not substantially improved by knowing the age or sex of a talker, above and beyond the marginal distributions. However, using a talker's own distributions produces, in some cases, a slight improvement in accuracy over any of the group-level/marginal cue distributions (even with cross-validation), but this improvement is not reliable (and depends on whether we consider log-odds or proportion correct responses). This shows that, while there may be _some_ talker-level variability in VOT, it is not systematically predicted by any of the socio-indexical grouping factors we examined here. The case of sex is particularly informative: knowing a talker's sex provides a big boost in speech recognition for vowels, but no benefit for stop consonant voicing.
 
 An ideal adapter would thus have very little reason to track cue distributions at the level of talkers' sex for VOT, but good reason to do the same for vowel formants. Even at the level of talker-specific distributions, knowing a talker's specific VOT distributions provides comparatively less of an advantage (assymptotically) over sex-level or even language-level distributions than for vowel formants. 
 
