@@ -1102,11 +1102,6 @@ vot_marginal_class <-
                            NA,
                            'Inferred'))
 
-vot_marginal_class %>%
-  group_by(grouping, place, Talker, word, Token) %>%
-  summarise(any_choice = any(posterior_choice)) %>%
-  summary()
-
 ## classification of voicing under true group
 vot_true_group_class <-
   vot_joint_class %>%
@@ -1159,7 +1154,7 @@ talker_vot_class <-
 
 The first analysis is whether it's possible to classify a talker's age (younger or older than 40) or sex based on their VOTs alone. As with vowels, we first compute the marginal likelihood of each token under each group's model, then the likelihoods of all tokens produced by a talker to get the overall likelihood of a talker's tokens under each group.
 
-```{r vot-group-class}
+```{r vot-group-class, fig.width=4}
 
 vot_group_class <-
   vot_joint_class %>%
@@ -1168,25 +1163,47 @@ vot_group_class <-
   summarise(log_posterior = unique(group_log_posterior)) %>%
   normalize_log_probability('log_posterior')
 
-vot_group_class %>%
-  filter(group == group_model) %>%
-  group_by(place, grouping, group) %>%
-  summarise(n(),
-            accuracy = mean(posterior_choice))
-
 ## aggregate over place of articulation
-vot_group_class %>%
+overall_vot_group_class <- 
+  vot_group_class %>%
   group_by(grouping, group, Talker, group_model) %>%
   summarise(log_posterior = sum(log_posterior)) %>%
-  mutate(log_posterior = log_posterior - log_sum_exp(log_posterior),
-         posterior = exp(log_posterior),
-         posterior_choice = posterior == max(posterior)) %>%
+  normalize_log_probability('log_posterior')
+
+overall_vot_group_class %>%
+  mutate(place = 'overall') %>% 
+  bind_rows(vot_group_class) %>%
   filter(group == group_model) %>%
-  ggplot(aes(x=grouping, y=posterior)) +
-  geom_point(alpha=0.2, position='jitter') +
-  stat_summary(geom='pointrange', fun.data=mean_cl_boot, color='red')
+  ggplot(aes(x=place, y=posterior)) +
+  geom_point(alpha=0.2, position=position_jitter(w=0.5)) +
+  stat_summary(geom='pointrange', fun.data=mean_cl_boot, color='red') +
+  facet_grid(.~grouping)
 
 ```
+
+```{r vot-group-class-acc-table, results='asis'}
+
+overall_vot_group_class %>%
+  filter(group == group_model) %>%
+  group_by(grouping) %>%
+  summarise(acc_mean = mean(posterior_choice),
+            acc_lo = binomial_ci(0.025, posterior_choice),
+            acc_hi = binomial_ci(0.975, posterior_choice)) %>%
+  knitr::kable(digits=2)
+
+overall_vot_group_class %>%
+  mutate(place = 'overall') %>% 
+  bind_rows(vot_group_class) %>%
+  filter(group == group_model) %>%
+  group_by(grouping, place) %>%
+  summarise(acc_mean = mean(posterior_choice),
+            acc_lo = binomial_ci(0.025, posterior_choice),
+            acc_hi = binomial_ci(0.975, posterior_choice)) %>%
+  knitr::kable(digits=2)
+
+```
+
+Classification of age and sex from VOT distributions isn't different from chance, either overall or in any particular place of articulation. This suggests that there are few systematic group-level differences in how talkers use VOT to cue voicing.
 
 ## Classifying voicing
 
