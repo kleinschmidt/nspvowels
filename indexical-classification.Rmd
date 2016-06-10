@@ -1275,6 +1275,46 @@ ggplot(vot_known_talker_advantage_logodds,
 
 It doesn't look like it. Or at least it depends on whether you code things as log odds or accuracy. There may be something going on with the cross validation (smaller sample size leads to more variable estimates of the distributions).
 
+## KL divergence from marginal
+
+One way to quantify how much the various group level VOT distributions differ is to measure the KL divergence of the marginal distribution from the group distributions. This measures the expected cost (in bits of extra message length) of encoding data from each group using a code that's optimized for the marginal distribution.
+
+```{r vot-kl}
+
+vot_by_place_marginal <-
+  vot_by_place %>%
+  mutate(marginal_models = map(data, ~ train_models(., 'voicing', 'vot')))
+
+vot_kl <-
+  cross_d(list(place = vot_by_place$place,
+               grouping = c('Talker', 'Sex', 'Age'))) %>%
+  left_join(vot_by_place_marginal, by='place') %>%
+  mutate(group_models = map2(data, grouping,
+                             ~ group_by_(.x, .y) %>%
+                               train_models(., 'voicing', 'vot') %>%
+                               rename_(group = .y)),
+         kl_from_marginal = map2(group_models, marginal_models,
+                                 ~ left_join(.x, .y, by='voicing') %>%
+                                   mutate(KL = map2_dbl(model.x, model.y,
+                                                        KL_mods))##  %>%
+                                   ## select(group, voicing, KL)
+                                 )
+         ) %>%
+  unnest(kl_from_marginal)
+
+
+vot_kl %>%
+  left_join(vot %>% group_by(place, voicing, phoneme) %>% summarise(),
+            by=c('place', 'voicing')) %>%
+  ggplot(aes(x=phoneme, y=KL, color=grouping, fill=grouping,
+             group=paste(phoneme,grouping))) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot,
+                  position = position_dodge(w=0.5))
+
+```
+
+
+
 ## Discussion
 
 
