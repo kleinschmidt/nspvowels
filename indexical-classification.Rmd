@@ -1111,18 +1111,13 @@ vot_true_group_class <-
   normalize_probability('lhood') %>%
   mutate(group_is = 'Known')
 
-vot_true_group_class %>%
-  group_by(grouping, place, Talker, word, Token) %>%
-  summarise(any_choice = any(posterior_choice)) %>%
-  summary()
-
 ```
 
 ### Single-talker models
 
 To get an estimate of how much knowing an individual talker's distribution helps classifying voiced vs. voiceless stops, we use 6-fold cross-validation, dividing each talker's productions into six approximately equally sized groups. Then we compute the mean and variance of voiced and voiceless stops for five of the groups, and classify tokens from the sixth, in turn for each group. As above, this is done separately for each place of articulation, since VOT varies systematically with place of articulation.
 
-```{r vot-talker-models}
+```{r vot-talker-models, cache=TRUE, message=FALSE}
 
 classify_voicing_by_talker_cv <- function(d, k=6) {
   d %>%
@@ -1214,21 +1209,42 @@ vot_class_all <- bind_rows(vot_marginal_class,
                            vot_true_group_class,
                            talker_vot_class)
 
-
-
-vot_class_all %>%
+vot_known_acc_all <-
+  vot_class_all %>%
   filter(group_is == 'Known' | grouping == 'Marginal',
          category_model == voicing) %>%
   group_by(grouping, voicing, place, phoneme, Talker) %>%
-  summarise(accuracy = mean(posterior_choice)) %>%
+  summarise(accuracy = mean(posterior_choice),
+            accuracy_logodds = log((sum(posterior_choice) + 0.5) / (sum(!posterior_choice) + 0.5)))
+
+## bar plot of accuracy over phonemes, by grouping
+vot_known_acc_all %>%
   ggplot(aes(x=phoneme, y=accuracy, fill=grouping, color=grouping)) +
   geom_bar(stat='summary', fun.y=mean, position=pd()) +
   geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
   lims(y=c(0,1)) +
   ggtitle('Stop voicing classification accuracy under known groups')
 
+## bar plot of accuracy over phonemes, by grouping
+vot_known_acc_all %>%
+  ggplot(aes(x=phoneme, y=accuracy_logodds, fill=grouping, color=grouping)) +
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  ggtitle('Stop voicing classification log odds under known groups')
 
 ```
+
+
+```
+
+
+Classifying stops as voiced or unvoiced is not substantially improved by knowing the age or sex of a talker, above and beyond the marginal distributions. However, using a talker's own distributions produces a slight but reliable improvement in accuracy over any of the group-level/marginal cue distributions (even with cross-validation). This shows that, while there is _some_ talker-level variability in VOT, it is not systematically predicted by any of the socio-indexical grouping factors we examined here. The case of sex is particularly informative: knowing a talker's sex provides a big boost in speech recognition for vowels, but no benefit for stop consonant voicing.
+
+An ideal adapter would thus have very little reason to track cue distributions at the level of talkers' sex for VOT, but good reason to do the same for vowel formants. Even at the level of talker-specific distributions, knowing a talker's specific VOT distributions provides comparatively less of an advantage (assymptotically) over sex-level or even language-level distributions than for vowel formants. 
+
+The structure of how talkers actually vary in their use of VOT and formants can thus serve as a _prior_ on whether to group observed cue values from one talker with those from another talker. There's a tradeoff in adapting to an unfamiliar talker: On the one hand, the cues produced by a talker are the most informative observations about the cues that talker will produce in the future. On the other hand, listeners often have very few tokens from an unfamiliar talker themselves, and estimates of an underlying distribution from a small number of observations are either highly uncertain or noisy and more likely to be wrong. Thus, in cases where cue distributions are similar across talkers, listeners can benefit by treating those observations as if they came from the same underlying distribution. But in cases where talkers differ a lot, lumping observations from different talkers or groups together will lead to reduced comprehension accuracy and/or slowed adaptation to a talker's own cue distributions. The analyses reported here show that _both_ types of situations actually occur in variation across talkers.
+
+Given this, it's hardly surprising that there are disagreements in the literature about whether listeners generalize what they learn from one talker to another, unfamiliar talker. When adapting to a voicing contrast, listeners are slower (which in the ideal adapter corresponds to stronger prior beliefs, based on more prior observations) and tend to lump different talkers together, requiring more evidence that two talkers produce _different_ cue distributions before they start to classify those talkers' VOT differently. For instance, @Kraljic2007 found that listeners did not recalibrate to a /d/-/t/ contrast in a talker-specific way, but listeners only heard 10 critical trials from each talker. Using a distributional learning paradigm, where listeners heard 300 trials from each talker, @Munson2011 found that listeners _did_ (eventually) learn talker-specific classification function, but that this took hundreds of trials to emerge. For contrasts that show more talker variability, there's (to my knowledge) no work on vowels themselves, but recalibration of fricative contrasts (which _do_ show similar levels of talker and gender variability; @Jongman2000; @McMurray2011a) consistently shows that listeners tend to recalibration separately to male and female talkers [among others: @Eisner2005; @Kraljic2005; @Kraljic2007; @Reinisch2014].
 
 # Discussion and conclusions
 
@@ -1273,6 +1289,8 @@ The basic conclusion we can draw from this is that a talker's gender can be reli
 ## The utility of indexical groups for vowel categorization
 
 The second questions we're interested in is whether knowing a talker's indexical group (at different levels) improves vowel recognition.  Here again we evaluated three levels of indexical grouping: gender, dialect, and the combination thereof. 
+
+<!-- evidence that listeners really do track gender-level vowel cue distributions: @Johnson1999: listeners use gender information for vowel classification when it's available, even from visual cues -->
 
 ### Conclusion
 
