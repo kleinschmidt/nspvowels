@@ -88,9 +88,21 @@
 
 ## Results
 
+### How _informative_ are socio-indexical variables?
+
+* KL divergence between marginal and other levels for vowels and stops
+    * Vowels:
+        * Talker is by far the most informative
+        * Sex is informative for un-normalized, not so much for normalized
+        * On the whole, Dialect is the least informative grouping factor (except on normalized input, where sex is essentially uninformative). But for some vowels, it _is_ informative, especially `ae` and `aa`, both of which are known to vary across dialects [both participate in the northern cities shift, and `aa` is undergoing a merger with `ao`, cf. @Clopper2005].
+    * Stop voicing
+        * Again, talker is the most informative of the grouping factors examined.
+        * But compared to vowels, it is far less informative. Comparable to the _least_ informative of all grouping variables (sex, for normalized input).
 
 
-# Caveat about group/token level prior
+# Discussion
+
+## Caveat about group/token level prior
 
 * Model each category as a single gaussian distribution.
 * Really, each category is a _mixture_ of talker-specific distributions.
