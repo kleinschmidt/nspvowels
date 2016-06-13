@@ -99,6 +99,19 @@
         * Again, talker is the most informative of the grouping factors examined.
         * But compared to vowels, it is far less informative. Comparable to the _least_ informative of all grouping variables (sex, for normalized input).
 
+### How _useful_ are socio-indexical variables for speech comprehension
+
+* Probability of correct recognition
+
+### How useful are cue distributions for socio-indexical inference?
+
+* Classifying the group of a talker
+* Vowel formants:
+    * Easy to infer sex (even with normalization)
+    * Harder to infer dialect. Performance is at chance with un-normalized input, but well above chance with normalized input.
+    * Dialect+sex is the same as dialect alone. Only change is that chance level is lower, which puts un-normalized performance above chance (but still at chance for dialect alone, after marginalizing out sex).
+* VOT: 
+    * Not possible to infer group at all.
 
 # Discussion
 
