@@ -908,13 +908,25 @@ vowel_acc %>%
 
 ### Socio-linguistically relevant shifts
 
+```{r dialect-vowel-spaces}
+
+nsp_vows_lob %>%
+  group_by(Dialect, Vowel) %>%
+  summarise_each(funs(mean), F1, F2) %>%
+  ggplot(aes(x=F2, y=F1, color=Dialect, label=Vowel)) +
+  geom_text() +
+  scale_x_reverse('F2 (Lobanov normalized)') +
+  scale_y_reverse('F1 (Lobanov normalized)')
+
+```
+
 @Clopper2005 identifies a number of dialect features that they expect to show up in this data set, some of which might affect recognition performance. They are:
 
 * Northern cities shift, which affects 
     * ae->eh, 
-    * eh->ah (this is "hud/hut"; not sure how it's coded in our data, since the coding is not the same as ARPABET apparently), 
-    * ah->ao, 
-    * ao->aa, 
+    * eh->uh, 
+    * uh->ao,
+    * ao->aa,
     * aa->ae.
 * Southern vowel shift:
     * eh<->ey
