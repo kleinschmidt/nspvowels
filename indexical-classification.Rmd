@@ -1037,6 +1037,53 @@ A slightly more complicated model would pool estimates for cross-talker variabil
 
 Another similar possibility would be to model the category means as a single vector, concatenating _all_ the single-category mean vectors. This would allow for more flexibility, since the covariance between categories A and B's means could be different from the covariance between A and C's. But this would require fitting many more parameters and is probably unrealistic given the amount of data we have (just 48 talkers for approximately $11^2=121$ correlations).
 
+# KL divergence
+
+Another way we can quantify the informativity of different levels of socio-indexical grouping is via the differences between the distributions of each category across different levels of grouping. 
+
+```{r vowel-kl}
+
+vowels_marginal <-
+  datasets %>%
+  mutate(marginal_models = map(data, train_models))
+
+vowel_kl <-
+  cross_d(list(dataset = datasets$dataset,
+               grouping = c('Talker', 'Sex', 'Dialect', 'Dialect_Sex'))) %>%
+  left_join(vowels_marginal) %>%
+  mutate(data = map(data,
+                    . %>% mutate(Marginal='all',
+                                 Dialect_Sex = paste(Sex, Dialect, sep='_'))),
+         group_models = map2(data, grouping,
+                             ~ group_by_(.x, .y) %>%
+                               train_models() %>%
+                               rename_(group = .y)),
+         kl_from_marginal = map2(group_models, marginal_models,
+                                 ~ left_join(.x, .y, by='Vowel') %>%
+                                   mutate(KL = map2_dbl(model.x, model.y,
+                                                        KL_mods))##  %>%
+                                   ## select(group, voicing, KL)
+                                 )
+         ) %>%
+  unnest(kl_from_marginal)
+
+
+vowel_kl %>%
+  mutate(grouping = factor(grouping, levels = grouping_levels)) %>%
+  arrange(Vowel, grouping) %>%
+  ggplot(aes(x=Vowel, y=KL, color=grouping, fill=grouping)) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot,
+                  position = position_dodge(w=0.5)) +
+  facet_grid(dataset ~ .)
+
+vowel_kl_summary <-
+  vowel_kl %>%
+  group_by(dataset, grouping, group) %>%
+  summarise(KL = mean(KL))
+
+```
+
+
 # Consonants
 
 Vowels show a lot of talker variability, which provides room for socio-indexical variables to add information that's helpful for comprehension. Many other contrasts do not show this level of talker variability. Voicing is one such contrast: talkers are relatively consistent in the distribution of voice onset time (VOT) they produce for voiced and unvoiced stops.
@@ -1302,7 +1349,6 @@ vot_kl <-
          ) %>%
   unnest(kl_from_marginal)
 
-
 vot_kl %>%
   left_join(vot %>% group_by(place, voicing, phoneme) %>% summarise(),
             by=c('place', 'voicing')) %>%
@@ -1311,9 +1357,27 @@ vot_kl %>%
   geom_pointrange(stat='summary', fun.data=mean_cl_boot,
                   position = position_dodge(w=0.5))
 
+vot_kl_summary <-
+  vot_kl %>%
+  group_by(grouping, group) %>%
+  summarise(KL = mean(KL))
+
 ```
 
+As with vowel formants, talker-specific distributions diverge the most from the marginal distribution. Unlike vowels, none of the less-specific socio-indexical groupings lead to substantial divergence. That is, neither age nor sex is substantially informative about VOT distributions.
 
+Compared with vowels, there is much less of a difference between marginal VOTs distributions and any of the more specific socio-indexical groupings. Even for the most specific, talker-level VOT distributions, the marginal distribution diverges between them at a level comparable to gender-level distributions for _normalized_ vowel formants (which remove most of the gender variation in overall formant frequencies).
+
+```{r vot-vowel-kl-comparison}
+
+bind_rows(vot_kl_summary %>% mutate(contrast = 'Stop voicing'),
+          vowel_kl_summary %>% mutate(contrast = 'Vowels')) %>%
+  ggplot(aes(x=grouping, y=KL, color=grouping)) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot,
+                  position = position_dodge(w=0.5)) +
+  facet_grid(.~contrast+dataset, scales='free', space='free')
+
+```
 
 ## Discussion
 
