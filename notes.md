@@ -82,7 +82,7 @@
         2. Get marginal probability of category $v_i$ by taking average of each group-specific probability, weighted by posterior of group, $p(v_i | x_i) = \sum_j p(v_i | x_i, g=j) p(g=j | x)$.
 * Controls
     * For classification, if test data is included in the training set, this artificially inflates accuracy at test.  Cross-validation controls for this by splitting data into training and test sets.  For group-level models (sex, age, dialect, and dialect+sex), we use leave-one-talker-out cross-validation: train each group's models with test talker's observations held out. For the talker-specific models, we use 6-fold cross-validation (or leave-one-out when there were fewer than 6 tokens in a category for a talker), where each phonetic category is split into 6 approximately equal subsets. Then, one subset of each category is selected for test, the models are trained on the remaining five, and the test data is classified as above.
-    * For the vowel data, the different levels of grouping have very different group sizes. The broadest (sex) has 24 talkers per group (23 after holdout), while the most specific (dialect+sex) has only 4 (3 after holdout).  This introduces a systematic bias in favor of broader groupings, because small sample sizes lead to noisier estimates of the underlying model, and hence lower accuracy (on average) at test. To correct for this, in addition to leave-one-out validation, we randomly selecting subsampled each group to be the same size when training models. We use a different random subsample for each talker's training set, with two group sizes: 3 talkers per group (corresponding to the Dialect+Sex grouping) and 7 talkers per group (corresponding to Dialect).
+    * For the vowel data, the different levels of grouping have very different group sizes. The broadest (sex) has 24 talkers per group (23 after holdout), while the most specific (dialect+sex) has only 4 (3 after holdout).  This introduces a systematic bias in favor of broader groupings, because small sample sizes lead to noisier estimates of the underlying model, and hence lower accuracy (on average) at test. To correct for this, in addition to leave-one-out validation, we randomly selecting subsampled each group to be the same size when training models. We use a different random subsample for each talker's training set, with two group sizes: 3 talkers per group (corresponding to the Dialect+Sex grouping) and 7 talkers per group (corresponding to Dialect). These provide a useful lower bound on the true group-level accuracy, and allows accuracy to be compared across grouping levels.
 
 [^notation]: $x_i$ refers to a single observed cue value (possibly multidimensional, in the case of vowel formants), and $x$ (without subscript) refers to a _vector_ of multiple observations (from a single talker, unless otherwise specified). $v_i$ refers to observation $i$'s category, and $g$ to a talker's group. $\sum_j$ refer to a sum over all possible values of $j$.
 
@@ -102,6 +102,11 @@
 ### How _useful_ are socio-indexical variables for speech comprehension
 
 * Probability of correct recognition
+* Vowels
+    * Overall, with normalized input accuracy is fairly good, even using marginal distributions (around 75%).
+    * Grouping provides little advantage over marginal, especially for normalized input. Knowing dialect provides a slight boost, but it's not reliable. Sex provides a 15-20% boost in accuracy for un-normalized input.
+    * When the group must be _inferred_, accuracy actually _increases_ in many cases. This suggests that either some talkers are mis-classified (or the classification scheme itself isn't capturing the true cluster structure) or that there are residual effects of individual differences in talkers' overall F1/F2.
+    * The pattern varies across vowels, though. Most vowels reflect the overall pattern, with little 
 
 ### How useful are cue distributions for socio-indexical inference?
 
@@ -122,3 +127,10 @@
 * For the purposes of _adaptation_, need to explicitly model this. But it's harder.
 * And really what we're trying to get at here is how far the group-level prior _alone_ gets you. This is a __lower bound__ on the utility of group-level knowledge.
 * Modeling each category as a single distribution of tokens provides an approximation of the predictive distribution you'd get for an _unfamiliar_ talker, where you marginalize out the talker-level models 
+
+## Overall formant differences
+
+<!-- MAYBE?? -->
+
+* There's substantial variabilty in talkers' overall F1/F2s that is _not_ captured by gender. There's more of a continuum than two distinct clusters.
+* Vowel extrinsic normalization: might do better with an intrinsic vowel normalization scheme.
