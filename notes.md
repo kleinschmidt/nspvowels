@@ -19,6 +19,16 @@
 * acoustic cues and phonetic categories can be/are differentially variable across talkers, and thus differentially suited for carrying socio-indexical information. Moreover, type and degree of _structure_ can differ, too.
 
 
+* Ideal adapter; Generalization/adaptation depends on degree and type of talker variation
+    * why? talker's own productions are most informative. but small sample size -> noise. so to the extent that 1. talkers vary and 2. some talkers are more similar than others, it behooves listeners to track group level distributions
+    * overall _level_ of talker variation. (don't need to worry about adapting if there's no talker variation)
+    * _structure_ of talker variation: when talker cluster into groups where within-group similarity is high and between-group similarity is low, can get a long way pooling experience with all talkers in the group.
+* Ideal adapter: track group-level distributions to the extent that they're useful. 
+    * at least two senses of "useful" are relevant here:
+        * useful for inferring socio-indexical variables
+        * for speech recognition
+
+
 # Outline
 
 ## Introduction
