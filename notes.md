@@ -56,7 +56,7 @@
         * about 30 voiced, 50 voiceless per place per talker (range: 5-150).
 * Model
     * Model each category as a Bi- or uni-variate normal distribution (for vowels and stops, respectively)
-    * Use sample mean and covariance for all tokens from category at the relevant grouping level
+    * Use maximum likelihood estimate (sample mean and covariance) based on all tokens from category at the relevant grouping level.
     * Grouping levels:
         * Marginal (all tokens)
         * Sex (male/female)
@@ -74,13 +74,15 @@
         * $p(x_i | g) = p(x_i | g) = \sum_j p(x_i | v_i=j, g)p(v_i=j)$
         * These likelihoods combine in the usual way to give the posterior:
         * $p(g | x) \propto p(x | g)p(g) = \prod_i p(x_i | g) p(g)$
-    * Use leave-one-talker-out cross-validation: train each group's models with test talker's observations held out. (Otherwise, accuracy is artificially inflated)
 * Speech recognition
     * For talker $t=i$, classify each observation's $x_i$ phonetic category $v_i$.
     * If we assume that talker $t$'s group is _known_, this is straightforward: $p(v_i | x_i, g) \propto p(x_i | v_i, g) p(v_i)$
     * If the group must also be inferred, there are two steps:
         1. Get the posterior probability of each group based on _all_ observations from the talker $p(g | x)$, as above.
         2. Get marginal probability of category $v_i$ by taking average of each group-specific probability, weighted by posterior of group, $p(v_i | x_i) = \sum_j p(v_i | x_i, g=j) p(g=j | x)$.
+* Controls
+    * For classification, if test data is included in the training set, this artificially inflates accuracy at test.  Cross-validation controls for this by splitting data into training and test sets.  For group-level models (sex, age, dialect, and dialect+sex), we use leave-one-talker-out cross-validation: train each group's models with test talker's observations held out. For the talker-specific models, we use 6-fold cross-validation, where each phonetic category is split into 6 approximately equal subsets. Then, one subset of each category is selected for test, the models are trained on the remaining five, and the test data is classified as above.
+    * For the vowel data, the different levels of grouping have very different group sizes. The broadest (sex) has 24 talkers per group (23 after holdout), while the most specific (dialect+sex) has only 4 (3 after holdout).  This introduces a systematic bias in favor of broader groupings, because small sample sizes lead to noisier estimates of the underlying model, and hence lower accuracy (on average) at test. To correct for this, in addition to leave-one-out validation, we randomly selecting subsampled each group to be the same size when training models. We use a different random subsample for each talker's training set, with two group sizes: 3 talkers per group (corresponding to the Dialect+Sex grouping) and 7 talkers per group (corresponding to Dialect).
 
 [^notation]: $x_i$ refers to a single observed cue value (possibly multidimensional, in the case of vowel formants), and $x$ (without subscript) refers to a _vector_ of multiple observations (from a single talker, unless otherwise specified). $v_i$ refers to observation $i$'s category, and $g$ to a talker's group. $\sum_j$ refer to a sum over all possible values of $j$.
 
