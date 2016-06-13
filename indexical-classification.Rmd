@@ -942,6 +942,45 @@ nsp_vows_lob %>%
 * New England
     * aa-ao merger
 
+```{r }
+
+data('clopper_competitors', package='nspvowels')
+clopper_competitors %<>% rename(vowel_model = Competitor)
+
+vowel_class_competitors <-
+  vowel_class_all %>%
+  select(-Dialect) %>%
+  left_join(nsp_vows %>% group_by(Talker, Dialect) %>% summarise(), by='Talker') %>%
+  inner_join(clopper_competitors, by = c('Vowel', 'Dialect'))
+  
+
+vowel_class_competitors %>%
+  filter(group_is == 'Known' | grouping == 'Marginal',
+         subsample_size == 7 | grouping == 'Dialect',
+         vowel_model == Competitor) %>%
+  group_by(dataset, grouping, Dialect, Vowel, vowel_model, Talker) %>%
+  summarise(confusions = mean(posterior_choice)) %>%
+  mutate(pair = paste(Vowel, vowel_model, sep=' -> ')) %>%
+  ggplot(aes(x=pair, y=confusions, color=grouping, fill=grouping)) +
+  geom_bar(stat='summary', fun.y = mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset~Dialect, space='free', scales='free') +
+  ggtitle('Socio-linguistically predicted confusions (7 talker subsample, group known)') +
+  labs(y = 'Proportion error occurred', x = 'Error')
+
+vowel_class_competitors %>%
+  filter(group_is == 'Known' | grouping == 'Marginal',
+         subsample_size == 7 | grouping == 'Dialect',
+         vowel_model == Vowel) %>%
+  group_by(dataset, grouping, Dialect, Vowel, Talker) %>%
+  summarise(accuracy = mean(posterior_choice)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, color=grouping, fill=grouping)) +
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset~Dialect, space='free', scales='free')
+
+
+```
 
 # Hierarchical model of talkers
 
