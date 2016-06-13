@@ -1088,7 +1088,7 @@ vowel_kl_summary <-
 
 Vowels show a lot of talker variability, which provides room for socio-indexical variables to add information that's helpful for comprehension. Many other contrasts do not show this level of talker variability. Voicing is one such contrast: talkers are relatively consistent in the distribution of voice onset time (VOT) they produce for voiced and unvoiced stops.
 
-Here we evaluate how informative indexical variables of gender and age are for classifying stops as voiced and unvoiced. The data comes from the Buckeye corpus of conversational speech, with VOTs for word-initial voiced and voiceless stops extracted by Wedel (DDDD).
+Here we evaluate how informative indexical variables of gender and age are for classifying stops as voiced and unvoiced. The data comes from the Buckeye corpus of conversational speech, with VOTs for word-initial voiced and voiceless stops extracted by Wedel (_in prep_).
 
 ## Data
 
