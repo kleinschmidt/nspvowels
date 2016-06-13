@@ -1011,10 +1011,19 @@ vowel_kl %>%
                   position = position_dodge(w=0.5)) +
   facet_grid(dataset ~ .)
 
+
 vowel_kl_summary <-
   vowel_kl %>%
   group_by(dataset, grouping, group) %>%
   summarise(KL = mean(KL))
+
+vowel_kl_summary %>%
+  ungroup() %>%
+  mutate(grouping = factor(grouping, levels = grouping_levels)) %>%
+  ggplot(aes(x=grouping, y=KL, color=grouping)) +
+  geom_pointrange(position = position_dodge(w=0.5),
+                  stat='summary', fun.data=mean_cl_boot) +
+  facet_grid(.~dataset)
 
 ```
 
