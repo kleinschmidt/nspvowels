@@ -103,10 +103,14 @@
 
 * Probability of correct recognition
 * Vowels
-    * Overall, with normalized input accuracy is fairly good, even using marginal distributions (around 75%).
-    * Grouping provides little advantage over marginal, especially for normalized input. Knowing dialect provides a slight boost, but it's not reliable. Sex provides a 15-20% boost in accuracy for un-normalized input.
-    * When the group must be _inferred_, accuracy actually _increases_ in many cases. This suggests that either some talkers are mis-classified (or the classification scheme itself isn't capturing the true cluster structure) or that there are residual effects of individual differences in talkers' overall F1/F2.
-    * The pattern varies across vowels, though. Most vowels reflect the overall pattern, with little 
+    * Overall, with normalized input, accuracy is fairly good, even using marginal distributions (around 75%).
+    * Grouping provides little advantage over marginal, especially for normalized input. Knowing dialect increases accuracy a few percentage points, but it's not clear whether this is reliable. Sex provides a 15-20% boost in accuracy for un-normalized input.
+    * When the group must be _inferred_, accuracy actually _increases_ in many cases. This suggests that either some talkers are mis-classified (or the classification scheme itself isn't capturing the true cluster structure) or that there are residual effects of individual differences in talkers' overall F1/F2 (with some groups randomly being a better match in terms of average F1/F2).
+    * The pattern varies across vowels, though. For some vowels, knowing dialect provides a substantial increase in accuracy. These include vowels that are known to vary with dialect: e.g., `ae` and `eh` participate in the northern cities shift. <!-- IS THIS REAL? seems to depend on subsample size/particular random draw... RUN MULTIPLE REPLICATES AND AVERAGE -->
+* VOT
+    * Accuracy is extremely high: 90-95%, even for marginal.
+    * Doesn't depend on grouping. There's a numerical advantage for talker-specific models in some phonemes, but it's not significant (or even close). This might be a ceiling effect though, because many talkers are at 100% accuracy.
+    * This suggests that there's _very little utility_ for tracking group-specific VOT distributions for age and sex (although that doesn't rule out the possibility that other groupings could be useful, like native language background).
 
 ### How useful are cue distributions for socio-indexical inference?
 
