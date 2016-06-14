@@ -1256,7 +1256,9 @@ vot_known_acc_all <-
          category_model == voicing) %>%
   group_by(grouping, voicing, place, phoneme, Talker) %>%
   summarise(accuracy = mean(posterior_choice),
-            accuracy_logodds = log((sum(posterior_choice) + 0.5) / (sum(!posterior_choice) + 0.5)))
+            accuracy_logodds =
+              log((sum(posterior_choice) + 0.5)) -
+              log((sum(!posterior_choice) + 0.5)))
 
 ## bar plot of accuracy over phonemes, by grouping
 vot_known_acc_all %>%
@@ -1289,8 +1291,8 @@ vot_known_acc_all %>%
   gather(comparison, accuracy, Age:Sex) %>%
   mutate(talker_advantage = Talker - accuracy) %>%
   group_by(phoneme, comparison) %>%
-  summarise(mean(talker_advantage))
-
+  do({ daver::boot_ci(., function(d,i) mean(d$talker_advantage[i]), h0=0) }) %>%
+  knitr::kable(digits=2)
 
 vot_known_talker_advantage_logodds <- 
   vot_known_acc_all %>%
@@ -1302,10 +1304,8 @@ vot_known_talker_advantage_logodds <-
 
 vot_known_talker_advantage_logodds %>%
   group_by(phoneme, comparison) %>%
-  summarise_each(funs(mean = mean,
-                      ci_lo = quantile(., 0.025),
-                      ci_hi = quantile(., 0.975)),
-                 talker_advantage)
+  do({ daver::boot_ci(., function(d,i) mean(d$talker_advantage[i]), h0=0) }) %>%
+  knitr::kable(digits=2)
 
 ggplot(vot_known_talker_advantage_logodds,
        aes(x=phoneme, y=talker_advantage, color=comparison)) +
