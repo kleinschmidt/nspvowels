@@ -980,8 +980,6 @@ vowel_class_competitors %>%
   ggtitle('Socio-linguistically predicted confusions (7 talker subsample, group known)') +
   labs(y = 'Proportion error occurred', x = 'Error')
 
-## there's something very odd: this is showing average accuracy < 20% for normalized
-## North eh grouped by Sex.
 vowel_class_competitors %>%
   filter(group_is == 'Known' | grouping == 'Marginal',
          subsample_size == 7 | grouping == 'Dialect',
@@ -992,52 +990,6 @@ vowel_class_competitors %>%
   geom_bar(stat='summary', fun.y=mean, position=pd()) +
   geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
   facet_grid(dataset~Dialect, space='free', scales='free')
-
-vowel_acc_all_with_sizes %>%
-  filter(grouping == 'Sex',
-         subsample_size == 7,
-         dataset == 'Lobanov Normalized') %>%
-  arrange(Talker, Vowel, Token) %>% ## MISSING TOKENS WTF
-  group_by(Talker, Vowel, group_is) %>% tally()
-                                        # the problem is with group_is == "known"
-                                        # probably at some point a join or filter went bad. t
-                                        # this obviously needs to be fixed
-
-vowel_acc_subsamp %>%
-  filter(grouping == 'Sex',
-         subsample_size == 7,
-         dataset == 'Lobanov Normalized') %>%
-  arrange(Talker, Vowel, Token) %>% ## MISSING TOKENS WTF
-  group_by(Talker, Vowel, group_is) %>% tally()
-
-# problem is with known, subsampled. ############################
-vowel_class_all %>%
-  filter(grouping == 'Sex',
-         dataset == 'Lobanov Normalized') %>%
-  group_by(Vowel, Token, subsample_size, group_is, Talker) %>%
-  summarise(x = any(posterior_choice)) %>%
-  group_by(subsample_size, group_is) %>%
-  summarise(all(x), mean(x))
-
-
-
-
-vowel_class_competitors %>%
-  filter(grouping == 'Sex',
-         subsample_size == 7,
-         vowel_model == Vowel,
-         dataset == 'Lobanov Normalized') %>%
-  arrange(Talker, Vowel, Token) %>%
-  group_by(Talker, Vowel, Competitor, group_is) %>% tally()
-
-  
-vowel_class_competitors %>%
-  filter(group_is == 'Known' | grouping == 'Marginal',
-         subsample_size == 7 | grouping == 'Dialect',
-         vowel_model == Vowel) %>%
-  group_by(dataset, grouping, Dialect, Vowel, Talker) %>%
-  summarise(accuracy = mean(posterior_choice)) %>%
-  spread(Vowel, accuracy) %>% knitr::kable()
 
 ```
 
