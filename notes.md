@@ -124,6 +124,18 @@
 
 # Discussion
 
+* We've looked at how much socio-indexical variables (groups) tell you about linguistic variables, and vice versa.
+    * Varies by category, group.
+    * Sex is highly informative about vowels across the board, and vice-versa.
+    * Dialect is only weakly informative, and then only for certain dialect group/phonetic category combinations.
+    * Talker identity is the most informative. <!-- TODO can we decode talker from vowels? -->
+    * But for stop consonant voicing, there's little talker variability and hence little room for socio-indexical variables (which operate largely at the talker level) to tell you anything. And likewise, there's little room for VOT to be informative about socio-indexical variables.
+* <!-- Why does this matter? --> 
+    * Adaptation/recalibration varies substantially across contrasts and cues, especially when it comes to generalization across talkers. The ideal adapter provides, in principle, and explanation for these differences: <explain>
+    * (( OR: ...provides a quantitative framework for explaining? for addressing these differences? ))
+    * The analysis here provides some evidence that this explanation is correct. When there's no differences across talkers, listeners benefit from assuming that talkers' distributions are the same, until they get evidence to the contrary.
+* <!-- How is this any different from what we already know? --> Demonstrates that ideal observer models (like the ideal adapter) provide a useful computational toolbox for investigating questions that are of interest to both psycholinguists (how do listeners deal with talker variability?) and sociolinguists (how do talkers vary in the realization of linguistic variables based on socio-indexical features?). To contast with previous analysis of this data: need a whole bunch of ANOVAs/t-tests to test whether realization of each category differs. This has a number of disadvantages that the current method addresses: it's hard to interpret, it doesn't directly quantify _how_ different dialect groups' realizations of each category, and it doesn't address the extent to which the linguistic variable (vowel formants) actually provides any information about the socio-indexical variable.
+
 ## Caveat about group/token level prior
 
 * Model each category as a single gaussian distribution.
