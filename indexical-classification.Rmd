@@ -488,12 +488,17 @@ true_group_class_subsampled <-
   joint_class_subsampled %>%
   filter(group == group_model,
          grouping != 'Marginal') %>%
-  group_by(dataset, grouping, Talker, group, Vowel, Token) %>%
-  mutate(log_lhood = log(lhood),
-         log_posterior = log_lhood - log_sum_exp(log_lhood),
-         posterior = exp(log_posterior),
-         posterior_choice = posterior == max(posterior)) %>%
+  group_by(dataset, grouping, subsample_size, Talker, group, Vowel, Token) %>%
+  normalize_probability('lhood') %>%
   mutate(group_is = 'Known')
+
+## check posterior
+true_group_class_subsampled %>%
+  group_by(dataset, grouping, subsample_size, Talker, Vowel, Token) %>%
+  summarise(n_choice = sum(posterior_choice),
+            sum_post = sum(posterior)) %$%
+  assert_that(all(n_choice == 1),
+              all.equal(sum_post, rep(1, length(sum_post))))
 
 ```
 
@@ -567,6 +572,15 @@ vowel_class_all <-
   mutate(grouping = factor(grouping, levels=grouping_levels),
          group_is = factor(group_is, levels=c('Inferred', 'Known')),
          vowel_model = factor(vowel_model, levels = levels(Vowel)))
+
+## check posteriors are correct
+vowel_class_all %>%
+  group_by(dataset, grouping, group_is, subsample_size, Talker, Vowel, Token) %>%
+  summarise(n_choice = sum(posterior_choice),
+            sum_post = sum(posterior)) %$%
+  assert_that(all(n_choice == 1),
+              all.equal(sum_post, rep(1, length(sum_post))))
+
 
 vowel_class <- vowel_class_all %>% filter(is.na(subsample_size))
   
@@ -945,7 +959,6 @@ nsp_vows_lob %>%
 ```{r }
 
 data('clopper_competitors', package='nspvowels')
-clopper_competitors %<>% rename(vowel_model = Competitor)
 
 vowel_class_competitors <-
   vowel_class_all %>%
@@ -990,6 +1003,25 @@ vowel_acc_all_with_sizes %>%
                                         # the problem is with group_is == "known"
                                         # probably at some point a join or filter went bad. t
                                         # this obviously needs to be fixed
+
+vowel_acc_subsamp %>%
+  filter(grouping == 'Sex',
+         subsample_size == 7,
+         dataset == 'Lobanov Normalized') %>%
+  arrange(Talker, Vowel, Token) %>% ## MISSING TOKENS WTF
+  group_by(Talker, Vowel, group_is) %>% tally()
+
+# problem is with known, subsampled. ############################
+vowel_class_all %>%
+  filter(grouping == 'Sex',
+         dataset == 'Lobanov Normalized') %>%
+  group_by(Vowel, Token, subsample_size, group_is, Talker) %>%
+  summarise(x = any(posterior_choice)) %>%
+  group_by(subsample_size, group_is) %>%
+  summarise(all(x), mean(x))
+
+
+
 
 vowel_class_competitors %>%
   filter(grouping == 'Sex',
