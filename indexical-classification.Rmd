@@ -574,12 +574,41 @@ vowel_class_all <-
          vowel_model = factor(vowel_model, levels = levels(Vowel)))
 
 ## check posteriors are correct
+## FAILS: NAs in some lhoods
 vowel_class_all %>%
   group_by(dataset, grouping, group_is, subsample_size, Talker, Vowel, Token) %>%
   summarise(n_choice = sum(posterior_choice),
             sum_post = sum(posterior)) %$%
   assert_that(all(n_choice == 1),
               all.equal(sum_post, rep(1, length(sum_post))))
+
+
+## where are these coming from?
+vowel_class_all %>%
+  filter(is.na(posterior)) %>%
+  group_by(grouping, group_is, dataset, subsample_size, group) %>%
+  tally()
+
+## joint_class_subsampled
+bad <- vowel_class_all %>%
+  filter(is.na(posterior)) %>%
+  group_by(dataset, subsample_size, grouping, Talker, Vowel, Token) %>%
+  summarise() %>%
+  left_join(joint_class_subsampled)
+
+okay <- joint_class_subsampled %>% anti_join(bad)
+
+## problem is that there're some places where all the GROUP models have
+## -Inf log posterior, which gets turned into NaN
+bad %>%
+  group_by(grouping, dataset, subsample_size, group, Talker,
+           Vowel, Token, vowel_model) %>%
+  summarise_each(funs(lp = log_sum_exp, length, min, max),
+                 log_posterior) %>%
+  summarise(bad=any(!is.finite(lp))) %>%
+  ungroup() %>% summarise(all(bad))
+
+
 
 
 vowel_class <- vowel_class_all %>% filter(is.na(subsample_size))
