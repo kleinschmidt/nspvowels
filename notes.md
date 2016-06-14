@@ -114,7 +114,7 @@
 
 ### How useful are cue distributions for socio-indexical inference?
 
-* Classifying the group of a talker
+* Classifying the group of a talker, without knowing phonetic categories
 * Vowel formants:
     * Easy to infer sex (even with normalization)
     * Harder to infer dialect. Performance is at chance with un-normalized input, but well above chance with normalized input.
