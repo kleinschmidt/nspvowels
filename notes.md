@@ -19,6 +19,30 @@
 * acoustic cues and phonetic categories can be/are differentially variable across talkers, and thus differentially suited for carrying socio-indexical information. Moreover, type and degree of _structure_ can differ, too.
 
 
+* Overarching point: listeners can benefit from structure in the world, but we don't know (quantitatively) what that structure is. When there's structure to variability, that variability is (at least partially) predictable, which makes it easier to deal with than purely random variability. 
+    * Reviewed evidence in [ideal adapter paper] that suggests people are sensitive to this strucutre. But we don't have quantitative measures of how much (and what kind) of structure there is in that variability across talkers, as it pertains to speech perception.
+        * [@McMurray2011a] 
+* The trick is that listeners need to infer what kind of structure there is, based on their experience. Beliefs should be __matched to the world__. The degree to which listeners should track talker- or group-level cue distribution depends, in the ideal adapter way of thinking, on the extent to which those grouping levels are informative about cue distributions (and speech recognition?).
+* One way to think about the reason behind this prediction is the concept of __bias-variance tradeoff__ from machine learning [cf. @James2013, Section 2.2].
+    * When you're learning a model based on data, there are two things that can hurt your accuracy:
+        * _Bias_ occurs when your model makes predictions that are insufficiently sensitive to the training data, missing meaningful signals in the data.
+        * _Variance_ occurs when your model is _overly_ sensitive to the data, picking up on meaningless noise as meaningful signal, which results in predictions that depend on the particular training sample (rather than the underlying strucutre of the data)
+    * These two sources of errors trade off: as model complexity increases, bias (hopefully) goes down, while variance (inevitably) goes up. The sweet spot, or the optimal tradeoff between bias and variance, depends on the complexity of the data-generating process, and on the amount of data available.
+* How does this apply to speech perception?
+    * Listeners need to infer the proper underlying distributions for each phonetic category for the current situation. In each situation (encounter with a particular talker) the sample size is fixed. So the factor that dominates their accuracy in estimating these distributions and making accurate inferences[^dist-cat] is the complexity of the data generating process, across all talkers.
+    * At the extreme of the simplest process, when there's no talker variability at all, listeners will do the best by learning a _marginal_ model, which groups tokens from all talkers together. The larger sample size from aggregating over talkers provides a more stable (lower-variance) estimate for the underlying distributions than the smaller sample from the current situation, and nothing is lost by using this simple model.
+    * At the other extreme, where talkers vary randomly and arbitrarily, the marginal model that lumps together all tokens from all talkers will be _biased_ towards the central tendency of all talkers. This greater effect of bias justifies a more complex model that tracks individual talkers separately, even though this increases variance because of the smaller sample size available for each talker.
+    * In the middle, where talkers don't vary arbitrarily but cluster into _groups_, this variance can be decreased by estimating distributions at the _group_ level. This introduces some additional bias (if there's within-group talker variability) but that bias is lower than the bias of the marginal model (to the extent that there are differences _between_ groups).
+    * (( HOW DOES THIS RELATE TO INFERRING GENERATIVE MODEL? seems like a different perspective: one is about learning a more accurate model of the world, the other is about estimating models that are good for _doing_ something with. different objectives, in principle ))
+* (( OKAY BUT WHAT ABOUT SOCIO-INDEXICAL VARIABLES ))
+    * The question now is what _is_ the level of grouping across talkers? Does it vary across phonetic categories and cues?
+    * A reasonable place to start is by looking at socio-indexical variables. Sociolinguistics has identified a number of these grouping variables that systematically affect phonetic cue distributions. Provides a good starting point for quantifying the how informative groups are for the purposes of adaptation and comprehension. This is not typically the focus of sociolinguistics, which instead focuses on identifying socially-conditioned variation (like how ongoing sound changes are socially stratified) and evaluating how well listeners pick up on socio-indexical variables like age, gender, sexual orientation, race, etc. from their lingustic consequences.
+    * The approach we take here also addresses this latter point: the problem of inferring socio-indexical variables from a talker's speech is formally very similar to the proble of inferring phonetic categories from speech. 
+    * And, in fact, the ability to infer these grouping variables is directly connected to the utility of tracking groups at all for speech perception. In some cases, listeners know, for instance, a talker's gender or age from extra-lingustic cues, but in others they must also _infer_ those variables at the same time as they infer phonetic categories. This leads us to ask how _jointly_ informative linguistic (phonetic) categories and socio-indexical grouping variables are.
+
+[^dist-cat]: Something about how distributions and categorization aren't teh same thing...
+[^hierarchical-model]: We've described these possible structure as lumping together _tokens_ from multiple talkers. However, the ideal adapter framework calls for a _hierarchical_ model, where _talkers_ are lumped together to estimate cross-talker variability that then serves as a prior distribution for future encounters with the same or different talkers. As discussed below, ignoring the hierarchical structure in this way is conceptually and technically simpler, and still provides a lower bound for classification accuracy. But it may _under-estimate_ the utility of grouping talkers for the purposes of adapting to a new talker. The logic of the bias-variance tradeoff still applies in a hierarchical framework.
+
 * Ideal adapter; Generalization/adaptation depends on degree and type of talker variation
     * why? talker's own productions are most informative. but small sample size -> noise. so to the extent that 1. talkers vary and 2. some talkers are more similar than others, it behooves listeners to track group level distributions
     * overall _level_ of talker variation. (don't need to worry about adapting if there's no talker variation)
@@ -33,15 +57,16 @@
 
 ## Introduction
 
-* Ideal adapter predicts that listeners should track _group-level_ cue distributions, conditioned on socio-indexical variables, for two reasons:
-    1. Helps with adapting to an unfamiliar talker.
-    2. Allows you to _infer_ socio-indexical variables
-* This prediction applies to the extent that socio-indexical variables are _informative_ about phonetic cue distributions. That is, to the extent that cue distributions differ reliably for different values of a socio-indexical variable, like age, sex, or dialect region.
+* Ideal adapter predicts that listeners should track cue distributions at the level of _groups_ of talkers, but only to the extent that those groups are useful.
+    * What is useful? Greater within-group than between-group similarity of talkers' cue distributions. Means that you lose less information (lower bias) by lumping together talkers within group.
+    * Another way grouping can be useful is if the groups correspond to _socio-indexical_ variables that a listener is interested in making inferences about. Here, too, it only makes sense to track groups to the extent that the cue distributions are actually different for different groups. Analogously, listeners have no reason to track phonetic category distributions over cues that are totally uninformative about that category (e.g., VOT for vowel place).
 * This paper
     * spell out this prediction in more detail.
     * test how informative some prominent socio-indexical variables are about two different kinds of contrasts: stop consonant voicing and vowel place.
         1. how much does knowing an unfamiliar talker's group improve comprehension (approximation of the utility of group-level priors on cue distributions)
         2. can you infer an unfamiliar talker's indexical group?
+
+### When should listeners not adapt? Not generalize?
 
 ## Methods
 
