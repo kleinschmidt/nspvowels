@@ -161,12 +161,23 @@
     * The analysis here provides some evidence that this explanation is correct. When there's no differences across talkers, listeners benefit from assuming that talkers' distributions are the same, until they get evidence to the contrary.
 * <!-- How is this any different from what we already know? --> Demonstrates that ideal observer models (like the ideal adapter) provide a useful computational toolbox for investigating questions that are of interest to both psycholinguists (how do listeners deal with talker variability?) and sociolinguists (how do talkers vary in the realization of linguistic variables based on socio-indexical features?). To contast with previous analysis of this data: need a whole bunch of ANOVAs/t-tests to test whether realization of each category differs. This has a number of disadvantages that the current method addresses: it's hard to interpret, it doesn't directly quantify _how_ different dialect groups' realizations of each category, and it doesn't address the extent to which the linguistic variable (vowel formants) actually provides any information about the socio-indexical variable.
 
+## Does anything matter besides sex
+
+* It's well-established that talker sex is the biggest factor in talker variability in vowel production, largely due to overall differences in vocal tract length. Our findings corroborate this: ignoring sex causes large penalties for speech recognition accuracy (without normalization).
+* Dialect is also considered to have strong effects on vowel production ((Labov?? Clopper2005??)). Our results seem to contract this: dialect-level grouping just does not provide much of a gain for recognition accuracy, except for a small number of vowels where there is known to be large dialect-condition variation.
+* Does this mean that listeners should _ignore_ dialect?
+* Not necessarily. 
+    * First, distributions _do_ differ (especially when combined with sex, or with normalized input). An ideal adapter seeks to learn an accurate generative model, which indirectly leads to increased phonetic categorization accuracy. But listeners are not, strictly speaking, ideal adapters, and the speech perception system is bound by additional resource constraints, above and beyond the intrinsic constraints of the bias-variance tradeoff. Thus, this may be an area to test for divergence between listeners' and the computational-level analysis of the ideal adapter.
+    * Secondly, dialect-level grouping might still provide benefit for _adaptation_. But to test this requires a _hierarchical_ model, rather than the flat one we use here. That's why this analysis provides a _lower_ bound on the utility of these grouping factors.
+    * Third, we've provided the model with input that is hugely improverished compared to the signal that human listeners have access to. There's much more to a vowel than the first and second formant frequencies at midpoint. At the very least, vowel length and higher formant frequencies are likely important, and formant trajectories are very informative, if harder to model [@Hillenbrand1995].
+    * Fourth, we're limited by the data available here. It's possible that due to the particular sample of talkers we have (and the particular way that dialect is coded in this corpus), we're under- or overestimating the effect of dialect. Larger data sets would help with the first problem, but the second is intrinsic to this type of work, and ultimately needs to be addressed using other modeling techniques like unsupervised clustering of talkers, combined with careful empirical sociolinguistic work.
+
 ## Caveat about group/token level prior
 
 * Model each category as a single gaussian distribution.
 * Really, each category is a _mixture_ of talker-specific distributions.
 * For the purposes of _adaptation_, need to explicitly model this. But it's harder.
-* And really what we're trying to get at here is how far the group-level prior _alone_ gets you. This is a __lower bound__ on the utility of group-level knowledge.
+* And really what we're trying to get at here is how far the group-level prior _alone_ gets you. This is a __lower bound__ on the utility of group-level knowledge for dealing with an unfamiliar talker.
 * Modeling each category as a single distribution of tokens provides an approximation of the predictive distribution you'd get for an _unfamiliar_ talker, where you marginalize out the talker-level models 
 
 ## Overall formant differences
