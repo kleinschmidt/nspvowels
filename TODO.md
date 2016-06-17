@@ -6,4 +6,4 @@
     * How to quantify this? Entropy of group given token?
 * Bootstrap/permutation tests for KL divergence
     * Effect of group size vs. actual grouping.
-    * Better measure of uncertainty in KL (talker is the relvant grouping for that, not groups themselves).
+    * Better measure of uncertainty in KL (talker is the relvant grouping for that, not groups themselves, but bootstrapping on talkers leads to inflated KL due to lower within-group variance).
