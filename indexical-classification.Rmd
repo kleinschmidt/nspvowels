@@ -808,7 +808,9 @@ vowel_acc_all_with_sizes %>%
 
 At the very least, it no longer looks like more specific groupings _hurt_ you. Dialect doesn't _help_ very much (except  when you have three talkers to train on and are inferring the group, but not when you _know_ the group, which seems like its probably noise).
 
-There might still be effects for particular vowels though (see below). My summary of these is that there's something to `ae` and `eh`, but it's not super consistent. Of course, it's probably going to be more informative to look at particular dialect groups in particular, given that there are (in principle) particular vowel changes in each group.
+There might still be effects for particular vowels though (see below). My summary of these is that there's something to `ae` and `eh`, but it's not super consistent. I think it's quite likely that any of these subtle effects are going to depend on the size of the group that's subsampled (since the whole goal of that is to increase variance in the estimates to comparable levels).
+
+On top of that, effects for single categories over all groups are not really that informative anyway. It's probably going to be more informative to look at particular dialect groups in particular, given that there are (in principle) particular vowel changes in each group.
 
 #### Three talkers
 
@@ -1046,8 +1048,8 @@ vowel_kl <-
          kl_from_marginal = map2(group_models, marginal_models,
                                  ~ left_join(.x, .y, by='Vowel') %>%
                                    mutate(KL = map2_dbl(model.x, model.y,
-                                                        KL_mods))##  %>%
-                                   ## select(group, voicing, KL)
+                                                        KL_mods)) %>%
+                                   select(group, voicing, KL)
                                  )
          ) %>%
   unnest(kl_from_marginal)
