@@ -16,7 +16,10 @@ Depends:
     tidyr,
     mvtnorm,
     psych,
-    assertthat
+    assertthat,
+    daver
+Remotes:
+    github::kleinschmidt/daver
 License: MIT
 LazyData: true
 RoxygenNote: 5.0.1
