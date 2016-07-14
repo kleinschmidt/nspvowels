@@ -4,8 +4,8 @@ output:
     html_document:
         code_folding: hide
         dev: 
-        - svglite
         - svg
+        - pdf
         keep_md: true
         md_extensions: +implicit_figures
         pandoc_args:
@@ -23,7 +23,39 @@ output:
 # Methods
 
 
+* Goal: assess joint informativity of linguistic variables, socio-indexical variables, and acoustic cues.
 
+## Data
+
+* F1 and F2 measurements from isolated hVd words from Nationwide Speech Project corpus
+* Data from 48 talkers: 4 male and 4 female from 6 dialect regions.
+* 11 vowels,  5 repetitions per vowel (on average: a few have 6, a few less).
+
+## Informativity about cue distributions
+
+If a variable is _informative_ about cue distributions, that means that
+distributions _conditioned on_ that variable are _different_ from each other and
+hence from the _unconditional_ distribution.
+
+Quantify by average _information gain_ (KL divergence) for conditional
+distributions over marginal. How much does knowing the value of the
+socio-indexical variable tell you about the cue distributions, relative to not
+knowing it?
+
+<!-- how much information do we _gain_ about cue distributions by conditioning on a -->
+<!-- socio-indexical variable? compare conditional distributions with _marginal_ -->
+<!-- distribution. measure the _information gain_ (KL divergence). -->
+
+## Utility for speech recognition
+
+By _utility_ of a socio-indexical variable, we mean the advantage for speech
+recognition from 
+
+1. _tracking_ conditional cue distributions
+2. _knowing_ the value of that variable
+
+Quantify this using an _ideal listener_ model. Classify observations based on
+conditional cue distributions using Bayes rule
 
 
 ```{r preamble, message=FALSE, warning=FALSE, error=FALSE, echo=FALSE, results='hide'}
