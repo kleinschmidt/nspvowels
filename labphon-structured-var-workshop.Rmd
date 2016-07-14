@@ -31,6 +31,7 @@ library(scales)
 
 library(phonR) # contains functions for vowel normalization
 
+devtools::load_all()
 
 ## Produce markdown-formatted figures so that pandoc knows what to do with
 ## the captions. requires pandoc-fignos to parse the IDs. refer to figures
@@ -65,15 +66,9 @@ theme_1 <- theme_bw() +
 
 ```{r load-data}
 # load hVd vowel data from Nationwide Speech Project
-devtools::load_all()
 data('nsp_vows', package='nspvowels')
 # add Lobanov-normalized (z-scored) F1 and F2 values
-nsp_vows <- nsp_vows %>%
-  group_by(Talker) %>%
-  mutate(
-    F1.Lobanov = as.numeric(normLobanov(F1)),
-    F2.Lobanov = as.numeric(normLobanov(F2)))
-
+nsp_vows <- ungroup(nsp_vows)
 
 ```
 
@@ -84,20 +79,6 @@ gender_model <- nsp_vows %>% group_by(Sex) %>% train_models()
 dialect_model <- nsp_vows %>% group_by(Dialect) %>% train_models()
 genderByDialect_model <- nsp_vows %>% group_by(Sex, Dialect) %>% train_models()
 marginal_model <- nsp_vows %>% group_by() %>% train_models()
-
-train_models_lobanov <- function(d, ...) 
-  train_models(d, formants = c("F1.Lobanov", "F2.Lobanov"), ...)
-
-speaker_model_Ln <- 
-  nsp_vows %>% group_by(Talker) %>% train_models_lobanov()
-gender_model_Ln <-
-  nsp_vows %>% group_by(Sex) %>% train_models_lobanov()
-dialect_model_Ln <-
-  nsp_vows %>% group_by(Dialect) %>% train_models_lobanov()
-genderByDialect_model_Ln <-
-  nsp_vows %>% group_by(Sex, Dialect) %>% train_models_lobanov()
-marginal_model_Ln <-
-  nsp_vows %>% group_by() %>% train_models_lobanov()
 
 ```
 
@@ -112,19 +93,6 @@ KL_talker <- speaker_model %>% kl_from_marginal("conditioned\non talker")
 KL_gender <- gender_model %>% kl_from_marginal("conditioned\non gender")
 KL_dialect <- dialect_model %>% kl_from_marginal("conditioned\non dialect")
 KL_genderByDialect <- genderByDialect_model %>% kl_from_marginal("conditioned\non gender and dialect")
-
-kl_from_marginal_lobanov <- 
-  function(...) kl_from_marginal(..., ref_models = marginal_model_Ln)
-
-KL_talker_Ln <-
-  speaker_model_Ln %>% kl_from_marginal_lobanov("conditioned\non talker")
-KL_gender_Ln <-
-  gender_model_Ln %>% kl_from_marginal_lobanov("conditioned\non gender")
-KL_dialect_Ln <-
-  dialect_model_Ln %>% kl_from_marginal_lobanov("conditioned\non dialect")
-KL_genderByDialect_Ln <-
-  genderByDialect_model_Ln %>% kl_from_marginal_lobanov("conditioned\non gender and dialect")
-
 
 ```
 
@@ -141,22 +109,10 @@ class_hz <-
             dialect_model,
             genderByDialect_model,
             marginal_model),
-       ~ classify_vowels(nsp_vows, .y) %>% mutate(model = .x)) %>%
-  bind_rows()
-
-class_Ln <-
-  map2(c('talker',
-         'gender',
-         'dialect',
-         'genderByDialect',
-         'marginal'),
-       list(speaker_model_Ln,
-            gender_model_Ln,
-            dialect_model_Ln,
-            genderByDialect_model_Ln,
-            marginal_model_Ln),
-       ~ classify_vowels(nsp_vows, .y) %>% mutate(model = .x)) %>%
-  bind_rows()
+       ~ classify_vowels(nsp_vows, .y) %>% mutate(grouping = .x)) %>%
+  bind_rows() %>%
+  filter(posterior_choice) %>%
+  mutate(correct = Vowel == model)
 
 ```
 
@@ -167,12 +123,6 @@ KL_combined <- bind_rows(KL_talker,
                          KL_dialect,
                          KL_genderByDialect
                          )
-
-KL_combined_Ln <- bind_rows(KL_talker_Ln,
-                            KL_gender_Ln,
-                            KL_dialect_Ln,
-                            KL_genderByDialect_Ln
-                            )
 
 KL_legend_title <- "Difference between the marginal F1xF2 distribution and the\ncorresponding distribution _______________"
 
@@ -199,38 +149,15 @@ p_kl <- KL_combined %>%
   geom_rangeframe(colour = "black", alpha = 1) +
   theme_1
 
-p_kl_ln <- KL_combined_Ln %>%
-  filter(!is.na(KL)) %>%
-  ggplot(aes(x = Vowel,
-             y = KL,
-             colour = Vowel, fill = Vowel,
-             group = KL.desc, alpha = KL.desc)) +
-  stat_summary(fun.y = "mean", geom = "bar", 
-               position = position_dodge(.9)) +
-  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", 
-               position = position_dodge(.9),
-               alpha = 1, colour = "grey30") +
-  stat_summary(fun.y = "mean", geom = "point", 
-               position = position_dodge(.9),
-               alpha = 1,
-               show.legend = FALSE) +
-  scale_y_continuous("KL divergence (in bits)", expand = c(0,0)) +
-  scale_alpha_manual(KL_legend_title, values = c(.4, .6, .8, .95)) +
-  guides(fill = FALSE, colour = FALSE,
-         alpha = guide_legend(title.position = "top")) +
-  coord_cartesian(ylim = c(0,6.3)) +
-  geom_rangeframe(colour = "black", alpha = 1) +
-  theme_1
-
 ```
 
 ```{r generate-plots-class}
 
-model_names <- data_frame(model = c('marginal',
-                                    'dialect',
-                                    'gender',
-                                    'genderByDialect',
-                                    'talker'),
+model_names <- data_frame(grouping = c('marginal',
+                                       'dialect',
+                                       'gender',
+                                       'genderByDialect',
+                                       'talker'),
                           generative_model = 
                             c("marginal",
                               "conditioned\non dialect",
@@ -254,33 +181,6 @@ p_hz <- class_hz %>%
              colour = Vowel,
              group = generative_model,
              #colour = generative_model, 
-             alpha = generative_model)) + 
-  stat_summary(fun.y = "mean", geom = "bar", 
-               position = position_dodge(.9)) +
-  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", 
-               position = position_dodge(.9),
-               alpha = 1, colour = "grey30") +
-  stat_summary(fun.y = "mean", geom = "point", 
-               position = position_dodge(.9),
-               aes(colour = Vowel),
-               alpha = 1,
-               show.legend = FALSE) +
-  scale_y_continuous("Probability of correct recognition") +
-  scale_alpha_manual("Generative model", values = c(.2, .4, .6, .8, .95)) +
-  guides(fill = FALSE, colour = FALSE) +
-  coord_cartesian(ylim = c(.38, 1)) +
-  geom_rangeframe(colour = "black", alpha = 1) +
-  theme_1
-
-
-p_Ln <- class_Ln %>%
-  mutate(correct_recog = as.numeric(correct)) %>%
-  left_join(model_names) %>%
-  ggplot(aes(x = Vowel, 
-             y = correct_recog, 
-             fill = Vowel,
-             colour = Vowel,
-             group = generative_model,
              alpha = generative_model)) + 
   stat_summary(fun.y = "mean", geom = "bar", 
                position = position_dodge(.9)) +

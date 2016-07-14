@@ -23,6 +23,9 @@ knitr::opts_chunk$set(cache = TRUE,
                       dev = c('png', 'pdf', 'svg'),
                       fig.width = 9,
                       fig.height = 3)
+
+devtools::load_all()
+
 ```
 
 
@@ -50,15 +53,14 @@ theme_1 <- theme_bw() +
 
 
 # load hVd vowel data from Nationwide Speech Project
-devtools::load_all()
 data('nsp_vows', package='nspvowels')
 
 # add Lobanov-normalized (z-scored) F1 and F2 values
-nsp_vows <- nsp_vows %>%
+nsp_vows_lob <- nsp_vows %>%
   group_by(Talker) %>%
-  mutate(
-    F1.Lobanov = as.numeric(normLobanov(F1)),
-    F2.Lobanov = as.numeric(normLobanov(F2)))
+  mutate_each(funs(normLobanov), F1, F2) %>%
+  ungroup()
+
 ```
 
 ```{r}
@@ -86,19 +88,16 @@ marginal_model <- nsp_vows %>% group_by() %>% train_models()
 ## Lobanov-normalized (z-scored) F~1~xF~2~ distributional statistics
 ```{r}
 
-train_models_lobanov <- function(d, ...) 
-  train_models(d, formants = c("F1.Lobanov", "F2.Lobanov"), ...)
-
 speaker_model_Ln <- 
-  nsp_vows %>% group_by(Talker) %>% train_models_lobanov()
+  nsp_vows_lob %>% group_by(Talker) %>% train_models()
 gender_model_Ln <-
-  nsp_vows %>% group_by(Sex) %>% train_models_lobanov()
+  nsp_vows_lob %>% group_by(Sex) %>% train_models()
 dialect_model_Ln <-
-  nsp_vows %>% group_by(Dialect) %>% train_models_lobanov()
+  nsp_vows_lob %>% group_by(Dialect) %>% train_models()
 genderByDialect_model_Ln <-
-  nsp_vows %>% group_by(Sex, Dialect) %>% train_models_lobanov()
+  nsp_vows_lob %>% group_by(Sex, Dialect) %>% train_models()
 marginal_model_Ln <-
-  nsp_vows %>% group_by() %>% train_models_lobanov()
+  nsp_vows_lob %>% ungroup() %>% train_models()
 
 
 ```
@@ -265,8 +264,10 @@ class_hz <-
             dialect_model,
             genderByDialect_model,
             marginal_model),
-       ~ classify_vowels(nsp_vows, .y) %>% mutate(model = .x)) %>%
-  bind_rows()
+       ~ classify_vowels(nsp_vows, .y) %>% mutate(grouping = .x)) %>%
+  bind_rows() %>%
+  filter(posterior_choice) %>%
+  mutate(correct = Vowel == model)
 
 class_Ln <-
   map2(c('talker',
@@ -279,8 +280,10 @@ class_Ln <-
             dialect_model_Ln,
             genderByDialect_model_Ln,
             marginal_model_Ln),
-       ~ classify_vowels(nsp_vows, .y) %>% mutate(model = .x)) %>%
-  bind_rows()
+       ~ classify_vowels(nsp_vows_lob, .y) %>% mutate(grouping = .x)) %>%
+  bind_rows() %>%
+  filter(posterior_choice) %>%
+  mutate(correct = Vowel == model)
 
 
 
@@ -291,11 +294,11 @@ class_Ln <-
 ## --------------------------------- 
 # define variables for quick conversion of factor levels
 
-model_names <- data_frame(model = c('marginal',
-                                    'dialect',
-                                    'gender',
-                                    'genderByDialect',
-                                    'talker'),
+model_names <- data_frame(grouping = c('marginal',
+                                       'dialect',
+                                       'gender',
+                                       'genderByDialect',
+                                       'talker'),
                           generative_model = 
                             c("marginal",
                               "conditioned\non dialect",

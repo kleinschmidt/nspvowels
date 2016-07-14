@@ -17,7 +17,11 @@ library(ggplot2)
 library(magrittr)
 library(tidyr)
 library(dplyr)
-library(phonR) # contains functions for vowel normalization
+
+theme_set(theme_bw())
+
+# normalization: z-score
+norm_lobanov <- function(x) x %>% scale() %>% as.numeric()
 
 library(devtools)
 load_all()
@@ -37,7 +41,7 @@ The biggest differences between talkers' overall distributions come from gender,
 ```{r lobanov-normalize}
 nsp_vows_lob <- nspvowels::nsp_vows %>%
   group_by(Talker) %>%
-  mutate_each(funs(normLobanov), F1:F2) %>%
+  mutate_each(funs(norm_lobanov), F1:F2) %>%
   ungroup()
 ```
 
@@ -64,8 +68,10 @@ datasets <- data_frame(dataset = c('Un-normalized', 'Lobanov Normalized'),
 
 index_models <-
   cross_d(list(dataset = datasets$dataset,
-               grouping = c('Dialect', 'Sex'))) %>%
+               grouping = c('Dialect', 'Sex', 'Dialect_Sex', 'Marginal'))) %>%
   left_join(datasets) %>%
+  mutate(data = map(data, . %>% mutate(Marginal='all',
+                                       Dialect_Sex = paste(Sex, Dialect, sep='_')))) %>%
   mutate(trained = map2(data, grouping, train_models_indexical_with_holdout),
          posteriors = map(trained, classify_indexical_with_holdout))
 
@@ -175,6 +181,22 @@ index_class %>%
 
 ```
 
+
+```{r dialect-gender-confusion-mats, fig.width=10, fig.height=5.4, echo=FALSE}
+
+index_class %>%
+  filter(grouping == 'Dialect_Sex') %>%
+  group_by(group, dataset, model) %>%
+  summarise(posterior = mean(posterior)) %>%
+  ggplot(aes(x=group, y=model, fill=posterior)) +
+  geom_tile() +
+  coord_equal() +
+  facet_grid(.~dataset) +
+  theme(axis.text = element_text(angle=45, hjust=1))
+
+```
+
+
 ### Single-talker dialect classification
 
 ```{r talker-dialect-classification, fig.width=11, fig.height=3.1, echo=FALSE}
@@ -188,6 +210,1248 @@ index_class %>%
 
 ```
 
+### Marginal classification of dialect and gender from both
+
+Accuracy is above chance for inferring both dialect and gender simultaneously, but performance is no better than in dialect alone; the change in significance is entirely due to lower levels of chance. This raises the question of whether it's easier to correctly infer dialect _alone_ when you consider separate dialect distributions for each gender.
+
+```{r marginal-dialect-gender-acc}
+
+index_class_both_marginal <- index_class %>%
+  filter(grouping == 'Dialect_Sex') %>%
+  separate(group, c('Sex', 'Dialect'), sep='_') %>%
+  separate(model, c('sex_model', 'dialect_model'), sep='_')
+
+## Dialect
+index_class_both_marginal_dialect <-
+  index_class_both_marginal %>%
+  group_by(dataset, Talker, Dialect, dialect_model) %>%
+  summarise(posterior = sum(posterior)) %>%
+  normalize_probability('posterior')
+
+index_class_both_marginal_dialect %>%
+  group_by(dataset, Dialect, dialect_model) %>%
+  summarise(posterior = mean(posterior)) %>%
+  ggplot(aes(x=Dialect, y=dialect_model, fill=posterior)) +
+  geom_tile() +
+  coord_equal() +
+  facet_grid(.~dataset) +
+  theme(axis.text = element_text(angle=45, hjust=1))
+
+index_class_both_marginal_dialect %>%
+  filter(Dialect == dialect_model) %>%
+  group_by(dataset) %>%
+  summarise(acc_mean = mean(posterior),
+            acc_lo = binomial_ci(0.025, posterior),
+            acc_hi = binomial_ci(0.975, posterior)) %>%
+  knitr::kable(digits=2)
+
+index_class_both_marginal_dialect %>%
+  filter(Dialect == dialect_model) %>%
+  ggplot(aes(x=dataset, y=posterior)) +
+  geom_hline(yintercept = 1/6,
+             linetype=3, color=agg_color) +
+  ## geom_bar(stat='summary', fun.y=mean) +
+  geom_point(position=position_jitter(w=0.5), alpha=0.2) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot, color=agg_color) +
+  labs(y = 'Posterior probability of correct group') +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+
+```
+
+Alas, no. Accuracy is _slightly_ higher but still not great (and not above chance for un-normalized vowels).
+
+# Joint vowel-indexical classification
+
+## Methods {.tabset .tabset-fade}
+
+We want to infer both the Vowel $v_i$ and the indexical group $g$, given some observations $x_i$. There are at least two ways to do this. Either way, we want to do it separately for each talker, making sure to use the right training/test data.
+
+### Factorized
+
+We can factor the joint posterior $p(v_i, g | x_i)$ into things we already know how to do:
+
+$p(v, g | x) = p(v | x, g) p(g | x)$
+
+That is, the probability of each vowel, given group (from the original analysis), weighted by how likely the group is given the tokens (from the first part here). We can compute each of these separately and them combine.
+
+#### Conditional posterior of each vowel, given group
+
+```{r vowel-given-group, cache=TRUE}
+## 1. Likelihood of each token under each vowel for each dialect model
+#' Compute posterior vowel category conditional on group
+#'
+#' Applies classify_vowels to test data for each group_model.
+#'
+#' @param data_test test data to calculate posteriors for
+#' @param group_models named list of group models, each of which is a named list
+#'   of vowel models
+#' @return data frame with one row per data_test row x group x vowel model, with
+#'   added columns group_model (name of group model), vowel_model (name of vowel
+#'   model), lhood p(x | vowel_model, group_model), posterior (p(vowel_model |
+#'   x, group_model)).
+compute_category_post_given_group <- function(data_test, group_models) {
+  group_models %>%
+    map(~ unlist_models(., 'category')) %>%
+    map(~ classify(data_test, ., 'category')) %>%
+    data_frame(group_model=names(.),
+               x=.) %>%
+    unnest(x) %>%
+    rename(category_model=model)
+}
+
+```
+
+#### Combine to get joint posterior
+
+```{r joint-posterior, cache=TRUE}
+
+#' Combine category | group posteriors with group posteriors
+#'
+#' @param group_category_posteriors category posterior probabilities conditional
+#'   on group, in the form of a data frame with at least columns category_model,
+#'   group_model, and posterior (e.g., output of
+#'   compute_category_post_given_group)
+#' @param group_posterior marginal group posterior probabilities, in the form of
+#'   a data frame with columns group_model and log_posterior (e.g., output of
+#'   compute_group_marginal_posterior)
+#' @return a data frame with the joint posterior of category category and group,
+#'   in posterior and log_posterior.
+#' 
+compute_joint_category_group_post <- function(group_category_posteriors, group_posteriors) {
+  group_posteriors %>%
+    select(group_model, group_log_posterior=log_posterior) %>%
+    inner_join(group_category_posteriors, by = 'group_model') %>%
+    mutate(log_posterior = log(posterior) + group_log_posterior,
+           posterior = exp(log_posterior))
+}
+```
+
+
+
+#### Do it
+
+```{r compute-joint-posteriors, cache=TRUE, dependson=c('train-test-models-cv',-1,-2,-3)}
+
+#' Compute joint indexical-linguistic posterior
+#'
+#' @param trained data frame with \code{models} and \code{data_test} (as
+#'   produced by \code{\link{train_models_indexical_with_holdout}}).
+#' @param obs_vars quoted names of columns in test data that together indentify
+#'   a single observation (e.g., \code{c('Vowel', 'Token')})
+#' @return a data frame with one observation per combination of group (e.g.,
+#'   Dialect), category (e.g. "ae"), and row in the ORIGINAL, un-nested data
+#'   set, with new columns \code{group_model}, \code{category_model},
+#'   \code{lhood}, \code{posterior}, and \code{log_posterior}. Posterior
+#'   probabilities sum to 1 within each cross-validation fold (e.g., Talker) +
+#'   observation (e.g., Vowel+Token) combination, over all values of category
+#'   and group.
+#' 
+trained_to_joint_post <- function(trained, obs_vars) {
+
+  trained %>%
+    mutate(conditional_posteriors = map2(data_test, models,
+                                         compute_category_post_given_group),
+           group_posteriors = map(conditional_posteriors,
+                                  . %>%
+                                    group_by_(.dots=obs_vars) %>%
+                                    marginalize('group_model') %>%
+                                    aggregate_lhood('group_model')),
+           joint_posteriors = map2(conditional_posteriors, group_posteriors,
+                                   compute_joint_category_group_post)) %>%
+    unnest(joint_posteriors)
+}
+
+index_models %<>%
+  mutate(joint_posteriors = map(trained,
+                                . %>%
+                                  trained_to_joint_post(c('Vowel', 'Token')) %>%
+                                  rename(vowel_model = category_model)))
+
+joint_class <-
+  index_models %>%
+  unnest(map2(joint_posteriors, grouping, ~ rename_(.x, 'group'=.y)))
+
+```
+
+### Directly
+
+Alternatively, you could just do it directly, by evaluating the likelihood of each vowel + dialect and then normalizing appropriately. 
+
+$p(v, g | x) \propto p(x | v, g) p(v, g)$
+
+The normalization is the tricky bit (since the effect of $g$ is pooled across all the tokens from a talker), and I think the factorized way is a bit easier.
+
+## Comparison to when group is known
+
+The real question is how much performance improves when you _know_ the right group. Again, it's important to evaluate this using cross validation: hold out one talker's data, group-level models on the others, and then test. 
+
+We've already calculated this above, just need to filter by `group == group_model` using the `joint_class` and re-normalize the posteriors correctly:
+
+```{r classify-with-known-group, cache=TRUE, dependson='train-test-models-cv'}
+
+# leaving this here for posterity: 
+#' Classify vowels assuming group is known
+#'
+#' @param trained trained models df
+#' @param grouping name of grouping column in trained
+#' @return test dataframe plus output of classify_vowels
+vowel_post_true_group <- function(trained, grouping) {
+  trained %>%
+    rename_('group' = grouping) %>%
+    mutate(model = map2(models, group, ~ .x[[.y]]) %>%
+             map(. %>% unlist_models('Vowel')),
+           vowel_class = map2(data_test, model, classify_vowels)) %>%
+    unnest(vowel_class) %>%
+    rename_(.dots = set_names('group', grouping))
+}
+
+true_group_class <-
+  joint_class %>%
+  filter(group == group_model,
+         grouping != 'Marginal') %>%
+  group_by(dataset, grouping, Talker, group, Vowel, Token) %>%
+  normalize_probability('lhood') %>%
+  mutate(group_is = 'Known')
+
+```
+
+## Comparison to same-talker distributions
+
+A sensible upper bound is provided by the recognition accuracy under the same talker's model. Again, it's important to get a cross-validated estimate of this accuracy, holding out test token data.
+
+```{r classify-same-talker, cache=TRUE, dependson='train-test-models-cv'}
+
+classify_vowels_by_talker_cv <- function(d) {
+  d %>%
+    train_test_split(holdout='Token') %>%
+    mutate(models_trained = map(data_train,
+                                . %>% group_by(Talker) %>% train_models()),
+           models_tested = map2(data_test, models_trained, classify_vowels)) %>%
+    unnest(models_tested) %>%
+    mutate(grouping = 'Talker',
+           group_is = 'Known',
+           group = 'all') %>%
+    rename(vowel_model = model)
+}
+
+talker_vowel_class <-
+  datasets %>%
+  unnest(vowel_class = map(data, classify_vowels_by_talker_cv))
+
+talker_vowel_class %>%
+  filter(Vowel == vowel_model) %>%
+  group_by(dataset, Vowel, Talker) %>%
+  summarise(acc = mean(posterior)) %>%
+  ggplot(aes(x=Vowel, y=acc)) +
+  geom_bar(fun.y = mean, stat='summary') +
+  geom_linerange(stat='summary', fun.data = mean_cl_boot) +
+  facet_grid(dataset ~ .)
+  
+
+```
+
+## Controlling for smaller group sizes
+
+The more specific grouping, the fewer talkers there are in the training set, which is going to increase the variance of the group-level estimates and likely reduce accuracy. Across groups this would introduce a bias, with more specific groups having lower accuracy overall. One way to compensate for this is to sub-sample the larger groups.
+
+```{r joint-class-sub-sample, cache=TRUE}
+
+# which subsample sizes to use for which grouping variables
+grouping_subsample_sizes <-
+  data_frame(grouping  = c("Dialect", "Sex", "Sex", "Marginal", "Marginal"),
+             subsample_size = c(4, 4, 8, 4, 8) - 1)
+
+index_models_subsampled <-
+  index_models %>%
+  select(dataset, grouping, data) %>%
+  right_join(grouping_subsample_sizes, by='grouping') %>%
+  mutate(trained = pmap(list(data, grouping, subsample_size),
+                        train_models_indexical_subsample_holdout))
+
+```
+
+```{r joint-posteriors-subsampled, cache=TRUE, dependson=-1}
+
+## get joint posterior classifications
+index_models_subsampled %<>%
+  mutate(joint_posteriors = map(trained, trained_to_joint_post))
+
+joint_class_subsampled <-
+  index_models_subsampled %>%
+  unnest(map2(joint_posteriors, grouping, ~ rename_(.x, 'group'=.y)))
+
+```
+
+```{r true-group-class-subsampled, cache=TRUE, dependson=-1}
+
+true_group_class_subsampled <-
+  joint_class_subsampled %>%
+  filter(group == group_model,
+         grouping != 'Marginal') %>%
+  group_by(dataset, grouping, subsample_size, Talker, group, Vowel, Token) %>%
+  normalize_probability('lhood') %>%
+  mutate(group_is = 'Known')
+
+## check posterior
+true_group_class_subsampled %>%
+  group_by(dataset, grouping, subsample_size, Talker, Vowel, Token) %>%
+  summarise(n_choice = sum(posterior_choice),
+            sum_post = sum(posterior)) %$%
+  assert_that(all(n_choice == 1),
+              all.equal(sum_post, rep(1, length(sum_post))))
+
+```
+
+```{r check-group-sizes}
+
+## check that the group size is actually right
+min_talker_count <- function(d, grouping) {
+  d %>% group_by_(grouping, 'Talker') %>%
+    summarise() %>%
+    tally() %>%
+    select_('n') %>%
+    unlist() %>%
+    min()
+}
+
+index_models_subsampled %>%
+  select(dataset, grouping, trained, subsample_size) %>%
+  mutate(group_size = map2_int(trained, grouping,
+                               ~ map_int(.x$data_train,
+                                         partial(min_talker_count, grouping=.y)) %>%
+                                 unique())) %$%
+  assert_that(all.equal(subsample_size, group_size))
+
+## add group sizes to non-subsampled groups (for comparison)
+index_models %>%
+  select(dataset, grouping, data) %>%
+  mutate(group_size = map2_int(data, grouping, min_talker_count))
+
+
+```
+
+## Results {.tabset}
+
+For each level of gropuing, we have two sets of results:
+
+1. The _marginal category probabilities_ of each token, which assumes that the group label is unknown and listeners need to simultaneously infer the group _and_ the categories. Hence, this is the weighted average of the probabilities assigned under each group, weighted by the overall probability of that group (given all the tokens).
+2. The _true group category probabilities_ of each token, which assumes that the listener _knows_ the true category. 
+
+For the marginal model, these two are equivalent.
+
+We can look at these in two ways: the full _confusion matrix_ of vowels, and the _probability of correct recognition_ under each scenario.
+
+```{r combine-joint-and-true, cache=TRUE, dependson=c('compute-joint-posteriors','classify-with-known-group')}
+
+
+marginal_vowel_class <- joint_class %>%
+  bind_rows(joint_class_subsampled) %>%
+  group_by(grouping, dataset, subsample_size, group, Talker) %>%
+  group_by(Vowel, Token, vowel_model, add=TRUE) %>%
+  ## marginalize out group_model:
+  summarise(log_posterior = log_sum_exp(log_posterior),
+            posterior = exp(log_posterior)) %>%
+  mutate(posterior_choice = posterior == max(posterior)) %>%
+  ungroup() %>%
+  mutate(group_is = ifelse(grouping=='Marginal',
+                           NA,
+                           'Inferred'))
+
+grouping_levels <-
+  c('Marginal',
+    'Dialect',
+    'Sex',
+    'Dialect_Sex',
+    'Talker')
+
+vowel_class_all <-
+  bind_rows(marginal_vowel_class,
+            true_group_class,
+            true_group_class_subsampled,
+            talker_vowel_class) %>%
+  mutate(grouping = factor(grouping, levels=grouping_levels),
+         group_is = factor(group_is, levels=c('Inferred', 'Known')),
+         vowel_model = factor(vowel_model, levels = levels(Vowel)))
+
+## check posteriors are correct
+vowel_class_all %>%
+  group_by(dataset, grouping, group_is, subsample_size, Talker, Vowel, Token) %>%
+  summarise(n_choice = sum(posterior_choice),
+            sum_post = sum(posterior)) %$%
+  assert_that(all(n_choice == 1),
+              all.equal(sum_post, rep(1, length(sum_post))))
+
+vowel_class <- vowel_class_all %>% filter(is.na(subsample_size))
+  
+## check that all posteriors over vowel_model sum to 1:
+vowel_class %>%
+  group_by(grouping, group_is, dataset, group, Talker, Vowel, Token) %>%
+  summarise(sum_post = sum(posterior)) %$%
+  assert_that(all.equal(sum_post, rep(1, length(sum_post))))
+
+vowel_acc <-
+  vowel_class %>%
+  filter(posterior_choice) %>%
+  mutate(accuracy = Vowel == vowel_model)
+
+vowel_acc_subsamp <-
+  vowel_class_all %>%
+  filter(!is.na(subsample_size), posterior_choice) %>%
+  mutate(accuracy = Vowel == vowel_model)
+
+```
+
+### Vowel confusion matrices
+
+Vowel confusion matrices, split out by grouping factor and whether group is known or inferred. 
+
+```{r joint-dialect-vowel-confusions, fig.width=10, cache=TRUE, dependson='compute-joint-posteriors'}
+
+vowel_class %>%
+  ## get cross-categorization probabilities for each vowel category (averaging
+  ## over tokens):
+  group_by(dataset, grouping, group_is, Vowel, vowel_model) %>% 
+  summarise(posterior = mean(posterior),
+            log_posterior = log_mean_exp(log_posterior)) %>%
+  ggplot(aes(x=Vowel, y=vowel_model, fill=posterior)) +
+  geom_tile() + coord_equal() +
+  scale_fill_gradient(limits=c(0,1)) +
+  facet_grid(dataset ~ grouping + group_is)
+
+```
+
+### Probability of correct recognition (accuracy)
+
+Compares recognition accuracy under the three grouping levels to baselines of the marginal distribution and talker-specific distributions.
+
+```{r setup-acc-plots, echo=FALSE}
+
+pd <- function() position_dodge(w=0.8)
+
+## combine grouping and group_is to get the ordering of these right for plotting:
+## (could use daver::paste_factors except for NA)
+plot_groups <-
+  vowel_acc %>%
+  group_by(grouping, group_is) %>%
+  summarise() %>%
+  mutate(grouping_group_is = paste(grouping, group_is, sep='_')) %>%
+  ungroup() %>%
+  mutate(grouping_group_is = factor(grouping_group_is,
+                                    levels = grouping_group_is))
+  
+```
+
+#### ...when group is known
+
+```{r joint-group-vowel-acc-known, fig.width=10, fig.height=6.6, echo=FALSE}
+
+vowel_acc %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  filter(group_is == 'Known' | grouping == 'Marginal') %>%
+  group_by(grouping, grouping_group_is, dataset, group, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, fill=grouping, color=grouping,
+             group= grouping_group_is)) +
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Probability of correct recognition of each vowel (group is known)')
+
+```
+
+Interestingly, in basically _no_ case does knowing the dialect provide any benefit, and in fact in the majority of cases it actually _harms_ performance.  However, for normalized formants, the same is true of talker-specific models. This suggests that limited data is a big constraint on the performance of these classifiers. 
+
+For un-normalized formants, talker-specific models improve performance over nearly every other grouping. Taken together with the overall _worse_ performance of talker-specific models on normalized formants, this suggests that much of the difficulty of classifying different talkers comes from the overall higher or lower formant frequencies that talkers produce.
+
+#### ...when group is inferred
+
+```{r joint-group-vowel-acc-inferred, fig.width=10, fig.height=6.6, echo=FALSE}
+
+vowel_acc %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  filter(group_is == 'Inferred' | grouping == 'Marginal' | grouping == 'Talker') %>%
+  group_by(grouping, grouping_group_is, dataset, group, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, fill=grouping, color=grouping,
+             group= grouping_group_is)) +
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Probability of correct recognition of each vowel (group is inferred)')
+
+```
+
+
+
+#### Comparing the two
+
+```{r joint-group-vowel-accuracy, fig.width=10, fig.height=6.6, echo=FALSE}
+vowel_acc %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, fill=grouping, color=grouping,
+             group= grouping_group_is)) +
+  geom_bar(aes(alpha=group_is), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset ~ .) +
+  scale_alpha_discrete(range = c(0.25, 0.85))
+
+```
+
+```{r joint-group-vowel-acc-alt, eval=FALSE, echo=FALSE}
+
+## alternatively: use color for known/inferred, alpha for grouping
+vowel_acc %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, fill=group_is, color=group_is,
+             group= grouping_group_is)) +
+  geom_bar(aes(alpha=grouping), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset ~ .) +
+  scale_alpha_discrete(range = c(0.1, 1))
+
+```
+
+
+This is a little odd: in many (most?) cases, knowing the true group actually _hurts_ you, versus inferring the group. Also, in almost no cases does conditioning on both dialect and gender do you any good whatsoever. So it looks like the earlier analysis was purely a result of double-dipping :(  This is going to take some re-thinking for writing it up.
+
+At a high level, what this reflects is that talkers with the same dialect are not necessarily more similar to each other in terms of their category-specific distributions. The overall distributions (ignoring the category identity) are similar enough (that is, can decode dialect, at least from normalized formants). And it might be the case that overall similarity (again, ignoring category) is correlated with good vowel categorization, which would lead to the marginal accuracy being higher.
+
+#### Overall probability of correct recognition across vowels
+
+```{r joint-group-accuracy, cache=TRUE, dependson='compute-joint-posteriors'}
+
+pd <- function() position_dodge(w=0.9)
+
+vowel_acc %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group, Talker) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=dataset,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(aes(alpha=group_is), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1))
+
+
+```
+
+Another thing that jumps out: Dialect doesn't really help above Marginal, and Dialec+Gender is actually _worse_ overall than Gender.
+
+Both this and the finding that known is worse than inferred might reflect an overtraining thing. More specific groups have fewer talkers and more instability in the estimate of the true underlying distribution. Similarly, the true group has one less talker because the test talker is held out. 
+
+One way to get around this might be to use individual talker models to classify the held out talker. Then at least you're not suffering from weirdly high variance distributions that come from a small number of wildly different talkers.
+
+Finally: better performance might be achieved with a hierarchical model that infer the talker-specific distributions using a group-level prior. This would require
+
+1. Estimating the distribution of means/covariance matrices for each vowel in each group. (Either sampling or MLE/MAP estimate)
+2. Jointly estimating category labels and talker distributions under each group.
+3. ...Profit? It's not clear how the marginalization would work. Might just be best off running a Stan model for each test-training split... Simultaneously infer test talker's group, vowel categories, and parameters, along with the group-level priors. This is going to require a TON of time/storage though.
+
+### Accuracy with subsampled talkers
+
+#### Overall
+
+```{r joint-group-acc-subsamp}
+
+vowel_acc_all_with_sizes <-
+  index_models %>%
+  select(dataset, grouping, data) %>%
+  mutate(group_size = map2_int(data, grouping, min_talker_count)) %>%
+  select(-data) %>%
+  right_join(vowel_acc) %>%
+  mutate(subsample_size = ifelse(grouping == 'Talker', 1, group_size-1)) %>%
+  bind_rows(vowel_acc_subsamp) %>%
+  mutate(grouping = factor(grouping, levels=grouping_levels))
+
+vowel_acc_all_with_sizes %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker) %>%
+  summarise(accuracy = mean(accuracy)) %>% 
+  ggplot(aes(x=grouping_group_is,
+             y=accuracy, fill=grouping, color=grouping,
+             group = subsample_size)) + 
+  geom_bar(aes(alpha=factor(subsample_size)), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(dataset ~ .) +
+  theme(axis.text.x = element_text(angle=15, hjust=1))
+
+```
+
+What's clear here is that accuracy takes a hit when you have fewer talkers in your training set. This is clearest in the big groupings (marginal and gender), where you lose almost 10% accuracy going from the full set to 3 talkers.
+
+This suggests that the differences between grouping levels we observed before are largely an artifact. So where does this leave the comparisons across grouping levels?
+
+```{r}
+
+vowel_acc_all_with_sizes %>%
+  filter(subsample_size %in% c(3,7)) %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=dataset,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(aes(alpha=group_is), stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(subsample_size~.)
+
+```
+
+At the very least, it no longer looks like more specific groupings _hurt_ you. Dialect doesn't _help_ very much (except  when you have three talkers to train on and are inferring the group, but not when you _know_ the group, which seems like its probably noise).
+
+There might still be effects for particular vowels though (see below). My summary of these is that there's something to `ae` and `eh`, but it's not super consistent. I think it's quite likely that any of these subtle effects are going to depend on the size of the group that's subsampled (since the whole goal of that is to increase variance in the estimates to comparable levels).
+
+On top of that, effects for single categories over all groups are not really that informative anyway. It's probably going to be more informative to look at particular dialect groups in particular, given that there are (in principle) particular vowel changes in each group.
+
+#### Three talkers
+
+##### Group is known
+
+```{r}
+
+## three talker subsample
+vowel_acc_all_with_sizes %>%
+  filter(subsample_size == 3,
+         group_is == 'Known' | grouping == 'Marginal') %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Vowel accuracy with three training talkers (group known)')
+
+```
+
+##### Group is inferred
+
+```{r}
+## three talker subsample
+vowel_acc_all_with_sizes %>%
+  filter(subsample_size == 3,
+         group_is == 'Inferred' | grouping == 'Marginal') %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Vowel accuracy with three training talkers (group inferred)')
+
+```
+
+#### Seven talkers
+
+##### Group is known
+
+```{r}
+
+## seven talker subsample
+vowel_acc_all_with_sizes %>%
+  filter(subsample_size == 7,
+         group_is == 'Known' | grouping == 'Marginal') %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Vowel accuracy with seven training talkers (group known)')
+
+```
+
+##### Group is inferred
+
+```{r}
+## seven talker subsample
+vowel_acc_all_with_sizes %>%
+  filter(subsample_size == 7,
+         group_is == 'Inferred' | grouping == 'Marginal') %>%
+  left_join(plot_groups, by=c('grouping', 'group_is')) %>%
+  group_by(grouping, group_is, grouping_group_is, dataset, group,
+           subsample_size, Talker, Vowel) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=Vowel,
+             y=accuracy, fill=grouping, color=grouping,
+             group=grouping_group_is)) + 
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  facet_grid(dataset ~ .) +
+  ggtitle('Vowel accuracy with seven training talkers (group inferred)')
+
+```
+
+### Vowel accuracy by group
+
+```{r vowel-acc-by-group}
+
+vowel_acc %>%
+  group_by(grouping, dataset, group, Talker) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  ggplot(aes(x=group, y=accuracy, group=grouping)) +
+  geom_point(alpha=0.2, position=position_jitter(w=0.5)) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot, color='red') +
+  facet_grid(dataset ~ grouping, space='free_x', scales='free_x') +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+
+```
+
+### Socio-linguistically relevant shifts
+
+```{r dialect-vowel-spaces}
+
+nsp_vows_lob %>%
+  group_by(Dialect, Vowel) %>%
+  summarise_each(funs(mean), F1, F2) %>%
+  ggplot(aes(x=F2, y=F1, color=Dialect, label=Vowel)) +
+  geom_text() +
+  scale_x_reverse('F2 (Lobanov normalized)') +
+  scale_y_reverse('F1 (Lobanov normalized)')
+
+```
+
+@Clopper2005 identifies a number of dialect features that they expect to show up in this data set, some of which might affect recognition performance. They are:
+
+* Northern cities shift, which affects 
+    * ae->eh, 
+    * eh->uh, 
+    * uh->ao,
+    * ao->aa,
+    * aa->ae.
+* Southern vowel shift:
+    * eh<->ey
+    * ih<->iy
+    * uw+ow fronting (confusable w/ what?)
+* Midland
+    * aa-ao merger
+* Mid-atlantic
+    * ao->ow(?) raising
+* Western
+    * aa-ao merger
+    * uw fronting
+* New England
+    * aa-ao merger
+
+```{r }
+
+data('clopper_competitors', package='nspvowels')
+
+vowel_class_competitors <-
+  vowel_class_all %>%
+  select(-Dialect) %>%
+  left_join(nsp_vows %>% group_by(Talker, Dialect) %>% summarise(), by='Talker') %>%
+  inner_join(clopper_competitors, by = c('Vowel', 'Dialect'))
+  
+
+vowel_class_competitors %>%
+  filter(group_is == 'Known' | grouping == 'Marginal',
+         subsample_size == 7 | grouping == 'Dialect',
+         vowel_model == Competitor) %>%
+  group_by(dataset, grouping, Dialect, Vowel, vowel_model, Talker) %>%
+  summarise(confusions = mean(posterior_choice)) %>%
+  mutate(pair = paste(Vowel, vowel_model, sep=' -> ')) %>%
+  ggplot(aes(x=pair, y=confusions, color=grouping, fill=grouping)) +
+  geom_bar(stat='summary', fun.y = mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset~Dialect, space='free', scales='free') +
+  ggtitle('Socio-linguistically predicted confusions (7 talker subsample, group known)') +
+  labs(y = 'Proportion error occurred', x = 'Error')
+
+vowel_class_competitors %>%
+  filter(group_is == 'Known' | grouping == 'Marginal',
+         subsample_size == 7 | grouping == 'Dialect',
+         vowel_model == Vowel) %>%
+  group_by(dataset, grouping, Dialect, Vowel, Talker) %>%
+  summarise(accuracy = mean(posterior_choice)) %>%
+  ggplot(aes(x=Vowel, y=accuracy, color=grouping, fill=grouping)) +
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  facet_grid(dataset~Dialect, space='free', scales='free')
+
+```
+
+# Hierarchical model of talkers
+
+So far, we've used a simplified, "flat" model that treats all tokens of a vowel in a group as coming from a _single_ Gaussian distribution. In reality, the tokens for each vowel are produced by a _mixture_ of talker-specific distributions. It's possible that generalizing across talkers is hampered by ignoring this generative structure. Ideally, listeners should _combine_ distributional information from the test talker themselves with the group-level prior over talker distributions.
+
+## Model methods
+
+### Group-level prior on talkers
+
+The first step is to decide on the form of the group-level prior. A conjugate prior would make inference simpler, but makes the assumption that the uncertainty about the means is directly proportional to the covariance of the category itself, which may not be appropriate for vowels. For instance, talkers vary overall in their formant frequencies, which means that across talkers the mean F1 and F2 are strongly positively correlated. But _within_ talkers, F1 and F2 are in general weakly correlated (and sometimes _negatively_ correlated).
+
+```{r}
+
+nsp_vows %>% group_by(Vowel, Talker) %>%
+  summarise(cor = cor(F1, F2)) %>%
+  summarise(cor_within = mean(cor, na.rm=TRUE)) %>%
+  left_join(nsp_vows %>% group_by(Vowel) %>% summarise(cor_across = cor(F1, F2)),
+            by='Vowel') %>%
+  knitr::kable(digits=2)
+
+```
+
+So it behooves us to model the covariance within and between talkers separately. The natural prior for the category means is a multivariate normal, and for the covariance matrices is an Inverse-Wishart.
+
+The simplest possible situation is that we have independent priors on each vowel's distribution. This would mean that, across talkers, the mean of each category is independent of the other categories, and likewise for the covariances.
+
+A slightly more complicated model would pool estimates for cross-talker variability across categories (to, e.g., account for the fact that overall F1 and F2 are correlated across talkers). This would entail putting a hyper-prior on the category mean covariance matrices that's the same across vowels. This would introduce dependence between the means of one category with the means of others, a dependence that would (potentially) vary across groups. (But not necessarily: there could be a single hyperprior for _all_ the groups).
+
+Another similar possibility would be to model the category means as a single vector, concatenating _all_ the single-category mean vectors. This would allow for more flexibility, since the covariance between categories A and B's means could be different from the covariance between A and C's. But this would require fitting many more parameters and is probably unrealistic given the amount of data we have (just 48 talkers for approximately $11^2=121$ correlations).
+
+# KL divergence
+
+Another way we can quantify the informativity of different levels of socio-indexical grouping is via the differences between the distributions of each category across different levels of grouping. 
+
+```{r vowel-kl}
+
+vowels_marginal <-
+  datasets %>%
+  mutate(marginal_models = map(data, train_models))
+
+vowel_kl <-
+  cross_d(list(dataset = datasets$dataset,
+               grouping = c('Talker', 'Sex', 'Dialect', 'Dialect_Sex'))) %>%
+  left_join(vowels_marginal) %>%
+  mutate(data = map(data,
+                    . %>% mutate(Marginal='all',
+                                 Dialect_Sex = paste(Sex, Dialect, sep='_'))),
+         group_models = map2(data, grouping,
+                             ~ group_by_(.x, .y) %>%
+                               train_models() %>%
+                               rename_(group = .y)),
+         kl_from_marginal = map2(group_models, marginal_models,
+                                 ~ left_join(.x, .y, by='Vowel') %>%
+                                   mutate(KL = map2_dbl(model.x, model.y,
+                                                        KL_mods)) %>%
+                                   select(group, voicing, KL)
+                                 )
+         ) %>%
+  unnest(kl_from_marginal)
+
+
+vowel_kl %>%
+  mutate(grouping = factor(grouping, levels = grouping_levels)) %>%
+  arrange(Vowel, grouping) %>%
+  ggplot(aes(x=Vowel, y=KL, color=grouping, fill=grouping)) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot,
+                  position = position_dodge(w=0.5)) +
+  facet_grid(dataset ~ .)
+
+
+vowel_kl_summary <-
+  vowel_kl %>%
+  group_by(dataset, grouping, group) %>%
+  summarise(KL = mean(KL))
+
+vowel_kl_summary %>%
+  ungroup() %>%
+  mutate(grouping = factor(grouping, levels = grouping_levels)) %>%
+  ggplot(aes(x=grouping, y=KL, color=grouping)) +
+  geom_pointrange(position = position_dodge(w=0.5),
+                  stat='summary', fun.data=mean_cl_boot) +
+  facet_grid(.~dataset)
+
+```
+
+
+# Consonants
+
+Vowels show a lot of talker variability, which provides room for socio-indexical variables to add information that's helpful for comprehension. Many other contrasts do not show this level of talker variability. Voicing is one such contrast: talkers are relatively consistent in the distribution of voice onset time (VOT) they produce for voiced and unvoiced stops.
+
+Here we evaluate how informative indexical variables of gender and age are for classifying stops as voiced and unvoiced. The data comes from the Buckeye corpus of conversational speech, with VOTs for word-initial voiced and voiceless stops extracted by Wedel (_in prep_).
+
+## Data
+
+```{r load-vot}
+
+library(votcorpora)
+
+vot <-
+  votcorpora::vot %>%
+  filter(source == 'buckeye') %>%
+  rename(Talker = subject,
+         Sex = sex,
+         Age = age_group) %>%
+  group_by(phoneme, word, Talker) %>%
+  mutate(Token = row_number()) %>%
+  ungroup()
+
+vot_by_place <-
+  vot %>%
+  group_by(place) %>%
+  nest()
+
+```
+
+## Models
+
+### Group-level models
+
+```{r train-vot-models, cache=TRUE}
+
+vot_index_models <-
+  cross_d(list(place = vot_by_place$place,
+               grouping = c('Marginal', 'Sex', 'Age'))) %>%
+  left_join(vot_by_place, by='place') %>%
+  mutate(data = map(data, . %>% mutate(Marginal = 'all')),
+         trained = map2(data, grouping,
+                        ~ train_models_indexical_with_holdout(.x,
+                                                              .y,
+                                                              category = 'voicing',
+                                                              formants = 'vot')),
+         joint_posteriors = map(trained,
+                                ~ trained_to_joint_post(., c('voicing', 'Token')))
+         )
+
+vot_joint_class <-
+  vot_index_models %>%
+  unnest(map2(joint_posteriors, grouping, ~ rename_(.x, 'group'=.y)))
+
+## marginal (inferred group) classification of voicing
+vot_marginal_class <-
+  vot_joint_class %>%
+  group_by(grouping, place, group, Talker) %>%
+  group_by(voicing, phoneme, word, Token, category_model, add=TRUE) %>%
+  summarise(log_posterior = log_sum_exp(log_posterior)) %>%
+  normalize_log_probability('log_posterior') %>%
+  ungroup() %>%
+  mutate(group_is = ifelse(grouping=='Marginal',
+                           NA,
+                           'Inferred'))
+
+## classification of voicing under true group
+vot_true_group_class <-
+  vot_joint_class %>%
+  filter(group == group_model,
+         grouping != 'Marginal') %>%
+  group_by(place, grouping, Talker, group, voicing, word, Token) %>%
+  normalize_probability('lhood') %>%
+  mutate(group_is = 'Known')
+
+```
+
+### Single-talker models
+
+To get an estimate of how much knowing an individual talker's distribution helps classifying voiced vs. voiceless stops, we use 6-fold cross-validation, dividing each talker's productions into six approximately equally sized groups. Then we compute the mean and variance of voiced and voiceless stops for five of the groups, and classify tokens from the sixth, in turn for each group. As above, this is done separately for each place of articulation, since VOT varies systematically with place of articulation.
+
+```{r vot-talker-models, cache=TRUE, message=FALSE}
+
+classify_voicing_by_talker_cv <- function(d, k=6) {
+  d %>%
+    group_by(Talker, voicing) %>%
+    mutate(split = ntile(runif(n()), k)) %>%  # 6-fold split
+    train_test_split(holdout='split') %>%
+    mutate(models_trained = map(data_train,
+                                . %>%
+                                  group_by(Talker) %>%
+                                  train_models(grouping = 'voicing',
+                                               formants = 'vot')),
+           models_tested = map2(data_test, models_trained,
+                                ~ classify(.x, .y, 'voicing'))) %>%
+    unnest(models_tested) %>%
+    mutate(grouping = 'Talker',
+           group_is = 'Known',
+           group = 'all') %>%
+    rename(category_model = model)
+}
+
+talker_vot_class <-
+  vot_by_place %>%
+  unnest(vowel_class = map(data, classify_voicing_by_talker_cv))
+
+
+```
+
+## Classifying indexical groups
+
+The first analysis is whether it's possible to classify a talker's age (younger or older than 40) or sex based on their VOTs alone. As with vowels, we first compute the marginal likelihood of each token under each group's model, then the likelihoods of all tokens produced by a talker to get the overall likelihood of a talker's tokens under each group.
+
+```{r vot-group-class, fig.width=4}
+
+vot_group_class <-
+  vot_joint_class %>%
+  filter(grouping != 'Marginal') %>%
+  group_by(place, grouping, Talker, group, group_model) %>%
+  summarise(log_posterior = unique(group_log_posterior)) %>%
+  normalize_log_probability('log_posterior')
+
+## aggregate over place of articulation
+overall_vot_group_class <- 
+  vot_group_class %>%
+  group_by(grouping, group, Talker, group_model) %>%
+  summarise(log_posterior = sum(log_posterior)) %>%
+  normalize_log_probability('log_posterior')
+
+overall_vot_group_class %>%
+  mutate(place = 'overall') %>% 
+  bind_rows(vot_group_class) %>%
+  filter(group == group_model) %>%
+  ggplot(aes(x=place, y=posterior)) +
+  geom_point(alpha=0.2, position=position_jitter(w=0.5)) +
+  stat_summary(geom='pointrange', fun.data=mean_cl_boot, color='red') +
+  facet_grid(.~grouping)
+
+```
+
+```{r vot-group-class-acc-table, results='asis'}
+
+overall_vot_group_class %>%
+  filter(group == group_model) %>%
+  group_by(grouping) %>%
+  summarise(acc_mean = mean(posterior_choice),
+            acc_lo = binomial_ci(0.025, posterior_choice),
+            acc_hi = binomial_ci(0.975, posterior_choice)) %>%
+  knitr::kable(digits=2)
+
+overall_vot_group_class %>%
+  mutate(place = 'overall') %>% 
+  bind_rows(vot_group_class) %>%
+  filter(group == group_model) %>%
+  group_by(grouping, place) %>%
+  summarise(acc_mean = mean(posterior_choice),
+            acc_lo = binomial_ci(0.025, posterior_choice),
+            acc_hi = binomial_ci(0.975, posterior_choice)) %>%
+  knitr::kable(digits=2)
+
+```
+
+Classification of age and sex from VOT distributions isn't different from chance, either overall or in any particular place of articulation. This suggests that there are few systematic group-level differences in how talkers use VOT to cue voicing.
+
+## Classifying voicing
+
+```{r plot-voicing-classification}
+
+## combine both
+vot_class_all <- bind_rows(vot_marginal_class,
+                           vot_true_group_class,
+                           talker_vot_class)
+
+vot_known_acc_all <-
+  vot_class_all %>%
+  filter(group_is == 'Known' | grouping == 'Marginal',
+         category_model == voicing) %>%
+  group_by(grouping, voicing, place, phoneme, Talker) %>%
+  summarise(accuracy = mean(posterior_choice),
+            accuracy_logodds =
+              log((sum(posterior_choice) + 0.5)) -
+              log((sum(!posterior_choice) + 0.5)))
+
+## bar plot of accuracy over phonemes, by grouping
+vot_known_acc_all %>%
+  ggplot(aes(x=phoneme, y=accuracy, fill=grouping, color=grouping)) +
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  lims(y=c(0,1)) +
+  ggtitle('Stop voicing classification accuracy under known groups')
+
+## bar plot of accuracy over phonemes, by grouping
+vot_known_acc_all %>%
+  ggplot(aes(x=phoneme, y=accuracy_logodds, fill=grouping, color=grouping)) +
+  geom_bar(stat='summary', fun.y=mean, position=pd()) +
+  geom_linerange(stat='summary', fun.data=mean_cl_boot, position=pd()) +
+  ggtitle('Stop voicing classification log odds under known groups')
+
+```
+
+### Advantage of talker over group-level models
+
+From the plots above, it looks like there might be a slight advantage of talker over other groups. Let's see if that's a real effect.
+
+```{r vot-groups-vs-talker}
+
+
+vot_known_acc_all %>%
+  rename(talker_id = Talker) %>%
+  select(-accuracy_logodds) %>%
+  spread(grouping, accuracy) %>%
+  gather(comparison, accuracy, Age:Sex) %>%
+  mutate(talker_advantage = Talker - accuracy) %>%
+  group_by(phoneme, comparison) %>%
+  do({ daver::boot_ci(., function(d,i) mean(d$talker_advantage[i]), h0=0) }) %>%
+  knitr::kable(digits=2)
+
+vot_known_talker_advantage_logodds <- 
+  vot_known_acc_all %>%
+  rename(talker_id = Talker) %>%
+  select(-accuracy) %>%
+  spread(grouping, accuracy_logodds) %>%
+  gather(comparison, accuracy_logodds, Age:Sex) %>%
+  mutate(talker_advantage = Talker - accuracy_logodds)
+
+vot_known_talker_advantage_logodds %>%
+  group_by(phoneme, comparison) %>%
+  do({ daver::boot_ci(., function(d,i) mean(d$talker_advantage[i]), h0=0) }) %>%
+  knitr::kable(digits=2)
+
+ggplot(vot_known_talker_advantage_logodds,
+       aes(x=phoneme, y=talker_advantage, color=comparison)) +
+  geom_violin()
+
+
+```
+
+It doesn't look like it. Or at least it depends on whether you code things as log odds or accuracy. There may be something going on with the cross validation (smaller sample size leads to more variable estimates of the distributions).
+
+## KL divergence from marginal
+
+One way to quantify how much the various group level VOT distributions differ is to measure the KL divergence of the marginal distribution from the group distributions. This measures the expected cost (in bits of extra message length) of encoding data from each group using a code that's optimized for the marginal distribution.
+
+```{r vot-kl}
+
+vot_by_place_marginal <-
+  vot_by_place %>%
+  mutate(marginal_models = map(data, ~ train_models(., 'voicing', 'vot')))
+
+vot_kl <-
+  cross_d(list(place = vot_by_place$place,
+               grouping = c('Talker', 'Sex', 'Age'))) %>%
+  left_join(vot_by_place_marginal, by='place') %>%
+  mutate(group_models = map2(data, grouping,
+                             ~ group_by_(.x, .y) %>%
+                               train_models(., 'voicing', 'vot') %>%
+                               rename_(group = .y)),
+         kl_from_marginal = map2(group_models, marginal_models,
+                                 ~ left_join(.x, .y, by='voicing') %>%
+                                   mutate(KL = map2_dbl(model.x, model.y,
+                                                        KL_mods))##  %>%
+                                   ## select(group, voicing, KL)
+                                 )
+         ) %>%
+  unnest(kl_from_marginal)
+
+vot_kl %>%
+  left_join(vot %>% group_by(place, voicing, phoneme) %>% summarise(),
+            by=c('place', 'voicing')) %>%
+  ggplot(aes(x=phoneme, y=KL, color=grouping, fill=grouping,
+             group=paste(phoneme,grouping))) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot,
+                  position = position_dodge(w=0.5))
+
+vot_kl_summary <-
+  vot_kl %>%
+  group_by(grouping, group) %>%
+  summarise(KL = mean(KL))
+
+```
+
+As with vowel formants, talker-specific distributions diverge the most from the marginal distribution. Unlike vowels, none of the less-specific socio-indexical groupings lead to substantial divergence. That is, neither age nor sex is substantially informative about VOT distributions.
+
+Compared with vowels, there is much less of a difference between marginal VOTs distributions and any of the more specific socio-indexical groupings. Even for the most specific, talker-level VOT distributions, the marginal distribution diverges between them at a level comparable to gender-level distributions for _normalized_ vowel formants (which remove most of the gender variation in overall formant frequencies).
+
+```{r vot-vowel-kl-comparison}
+
+bind_rows(vot_kl_summary %>% mutate(contrast = 'Stop voicing'),
+          vowel_kl_summary %>% mutate(contrast = 'Vowels')) %>%
+  ggplot(aes(x=grouping, y=KL, color=grouping)) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot,
+                  position = position_dodge(w=0.5)) +
+  facet_grid(.~contrast+dataset, scales='free', space='free')
+
+```
+
+## Discussion
+
+
+Classifying stops as voiced or unvoiced is not substantially improved by knowing the age or sex of a talker, above and beyond the marginal distributions. However, using a talker's own distributions produces, in some cases, a slight improvement in accuracy over any of the group-level/marginal cue distributions (even with cross-validation), but this improvement is not reliable (and depends on whether we consider log-odds or proportion correct responses). This shows that, while there may be _some_ talker-level variability in VOT, it is not systematically predicted by any of the socio-indexical grouping factors we examined here. The case of sex is particularly informative: knowing a talker's sex provides a big boost in speech recognition for vowels, but no benefit for stop consonant voicing.
+
+An ideal adapter would thus have very little reason to track cue distributions at the level of talkers' sex for VOT, but good reason to do the same for vowel formants. Even at the level of talker-specific distributions, knowing a talker's specific VOT distributions provides comparatively less of an advantage (assymptotically) over sex-level or even language-level distributions than for vowel formants. 
+
+The structure of how talkers actually vary in their use of VOT and formants can thus serve as a _prior_ on whether to group observed cue values from one talker with those from another talker. There's a tradeoff in adapting to an unfamiliar talker: On the one hand, the cues produced by a talker are the most informative observations about the cues that talker will produce in the future. On the other hand, listeners often have very few tokens from an unfamiliar talker themselves, and estimates of an underlying distribution from a small number of observations are either highly uncertain or noisy and more likely to be wrong. Thus, in cases where cue distributions are similar across talkers, listeners can benefit by treating those observations as if they came from the same underlying distribution. But in cases where talkers differ a lot, lumping observations from different talkers or groups together will lead to reduced comprehension accuracy and/or slowed adaptation to a talker's own cue distributions. The analyses reported here show that _both_ types of situations actually occur in variation across talkers.
+
+Given this, it's hardly surprising that there are disagreements in the literature about whether listeners generalize what they learn from one talker to another, unfamiliar talker. When adapting to a voicing contrast, listeners are slower (which in the ideal adapter corresponds to stronger prior beliefs, based on more prior observations) and tend to lump different talkers together, requiring more evidence that two talkers produce _different_ cue distributions before they start to classify those talkers' VOT differently. For instance, @Kraljic2007 found that listeners did not recalibrate to a /d/-/t/ contrast in a talker-specific way, but listeners only heard 10 critical trials from each talker. Using a distributional learning paradigm, where listeners heard 300 trials from each talker, @Munson2011 found that listeners _did_ (eventually) learn talker-specific classification function, but that this took hundreds of trials to emerge. For contrasts that show more talker variability, there's (to my knowledge) no work on vowels themselves, but recalibration of fricative contrasts (which _do_ show similar levels of talker and gender variability; @Jongman2000; @McMurray2011a) consistently shows that listeners tend to recalibration separately to male and female talkers [among others: @Eisner2005; @Kraljic2005; @Kraljic2007; @Reinisch2014].
+
+# Discussion and conclusions
+
+We've looked at the extent to which indexical and linguistic categories are mutually informative, using vowels as a test case. First, we asked how well we can infer a talker's indexical grouping (gender, dialect, or the combination of both) based on unlabeled formant values for a number of productions of each vowel category. Second, we asked how much the indexical grouping variables of gender, dialect, and the combination thereof improve vowel classification (or, conversely, hamper correct recognition when they are ignored). Third, we asked whether it was possible to _simultaneously_ infer a talker's indexical group and correctly categorize their productions at the same time.
+
+## Decoding indexical groups
+
+We investigated three levels of socio-indexical grouping: gender, dialect, and the combination of both.
+
+### Gender
+
+It's possible to decode a talker's gender with high accuracy.  For raw formant frequencies, this is unsurprising, since male talkers produce vowels with much lower formant frequencies than females. However, it's still possible to classify talkers as male or female with high (if slightly lower) accuracy even after Lobanov normalizing formant frequencies, which removes these overall differences in formant frequencies. This suggests that there are systematic differences between the distributions produced by male and female talkers. However, this might be attributable to the fact that formant frequencies might be better thought of as on a log-Hz scale, rather than the linear Hz scale on which Lobanov normalization operates.
+
+### Dialect
+
+A talker's dialect is more difficult to decode. Using un-normalized formant frequencies, performance is at chance. This is not terribly surprising, because the within-category variance from gender swamps within-category variance due to dialect, rendering dialect-specific distributions that ignore gender largely overlapping and hence hard to distinguish. Consistent with this interpretation, dialect classification using Lobanov-normalized formant frequencies is significantly greater than chance (and for raw formant frequencies). Thus, there is _some_ consistency in how dialects realize their vowels, but it's dwarfed by gender (or overall formant frequency) differences.
+
+TODO: classification when vowel category is KNOWN.
+
+### Dialect and gender together
+
+Along the same lines, by classifying dialect and gender simultaneously, performance is above chance, even on non-normalized formants. However, an important caveat is that performance is no better _numerically_ than when classifying dialect alone (for both normalized and raw formant frequencies); rather, chance performance is half what it is in that case. And, in fact, classification of dialect alone is _still_ not greater than chance when gender is taken into account (even if it is slightly better than when gender is ignored).
+
+The persistent advantage of Lobanov-normalized input for dialect decoding is then puzzling. It's not simply a matter of controlling for overall formant frequency differences between gender. Rather, one possibility is that there is substantial individual variability in overall forman frequencies, variability that is _not_ entirely attributable to binary gender categories of male and female. 
+
+```{r gender-individ-formant-var}
+
+nsp_vows %>%
+  group_by(Talker, Sex) %>%
+  summarise_each(funs(mean), F1, F2) %>%
+  ggplot(aes(x=F2, y=F1, color=Sex, group=Talker)) +
+  geom_point() +
+  scale_x_reverse() +
+  scale_y_reverse()
+
+```
+
+### Overall
+
+The basic conclusion we can draw from this is that a talker's gender can be reliably inferred from their vowel productions, but it's harder to reliably determine dialect. Much of this has to do with individual variation in overall formant frequencies: gender accounts for a lot, but not all of that variation. Lobanov normalization effectively controls for this variation, and makes it possible to determine a talker's dialect with fairly good accuracy. For listeners to actually be able to do something like Lobanov normalization, all they'd need is enough samples to reliably determine the overall mean and standard deviation of a talker's formant frequencies. It's possible that vowel-intrinsic normalization methods that use f0 or F3 would be similarly effective (since these are all presumably jointly affected by the same physiological factors), and these work on a token-by-token basis. But this dataset does not include f0 or F3 so it's not possible to examine vowel-intrinsic normalization.
+
+## The utility of indexical groups for vowel categorization
+
+The second questions we're interested in is whether knowing a talker's indexical group (at different levels) improves vowel recognition.  Here again we evaluated three levels of indexical grouping: gender, dialect, and the combination thereof. 
+
+<!-- evidence that listeners really do track gender-level vowel cue distributions: @Johnson1999: listeners use gender information for vowel classification when it's available, even from visual cues -->
+
+### Conclusion
+
+* Gender helps
+* Dialect doesn't (at least not with this data)
+
+Not much of a benefit from tracking dialect _for the purposes of speech recognition_, at least not overall. Most of the difficulty in categorizing vowels comes from non-dialectal variation.  Dialect might, in principle, help with some edge cases.
+
+TODO: check @Clopper2005 for specific cases to look at. 
+@Clopper2005 found that the features that are considered characteristic of these dialects were present in varying degrees across the sample of talkers, including some systematic variability by gender. Combined with the small sample size of four talkers per gender-dialect combination, it is perhaps not surprising that there's little benefit to using dialect- or dialect-plus-gender-specific distributions.
+
+
+However, there _is_ a benefit for _indexical_ recognition, as revealed by the indexical classification analysis. Dialect is tied up with class and regional origin, both of which are socially highly relevant variables that listeners quite likely are interested in.
+
+(( something something penny eckert spaces where linguistic variation doesn't matter much )).
+
+All of this suggests that listeners might track more indexical structure in variability in cue distributions than is directly beneficial for speech recognition _per se_.
+
+## Caveats
+
+The model used is a simplistic, "flat" model that treats all tokens of a vowel in a group as coming from a _single_ Gaussian distribution. In reality, the tokens of a single vowel are produced by a _mixture_ of talker-specific distributions. It's possible that our results here are biased as a result.
 
 
 # Appendix: the danger of double dipping
@@ -253,9 +1517,7 @@ summarise_posterior <- function(d) {
     group_by(Talker, Dialect, model) %>%
     summarise(lhood = sum(lhood)) %>%     # aggregate log-lhood within talkers
     # normalize to get posterior
-    mutate(log_posterior = lhood - log_sum_exp(lhood),
-           posterior = exp(log_posterior),
-           posterior_choice = as.numeric(posterior == max(posterior)))
+    normalize_log_probability('lhood')
 }
 
 posteriors <- d %>% join_lhoods(log_lhoods) %>% summarise_posterior()
