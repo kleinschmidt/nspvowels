@@ -1,0 +1,721 @@
+---
+
+output:
+    html_document:
+        code_folding: hide
+        dev: 
+        - svglite
+        - svg
+        keep_md: true
+        md_extensions: +implicit_figures
+        pandoc_args:
+        - --filter
+        - pandoc-fignos
+        - --filter
+        - pandoc-tablenos
+        - --filter
+        - pandoc-eqnos
+
+
+---
+
+
+# Methods
+
+
+
+
+
+```{r preamble, message=FALSE, warning=FALSE, error=FALSE, echo=FALSE, results='hide'}
+
+library(knitr)
+opts_chunk$set(message=FALSE,
+               warning=FALSE,
+               error=FALSE,
+               echo=opts_knit$get("rmarkdown.pandoc.to") != 'latex',
+               cache=TRUE)
+
+library(magrittr)
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(stringr)
+
+library(svglite)
+library(ggplot2)
+library(cowplot)
+## theme_set(theme_bw())
+
+## cowplot theme + y axis gridlines
+theme_set(theme_cowplot() %+replace%
+            theme(panel.grid.major = element_line(colour='gray90', size=0.2),
+                  panel.grid.minor = element_line(colour='gray98', size=0.5),
+                  panel.grid.major.x = element_blank(),
+                  panel.grid.minor.x = element_blank()))
+rotate_x_axis_labs <- function(by=45) theme(axis.text.x = element_text(angle=by, hjust=1))
+
+
+## devtools::install_github('kleinschmidt/daver')
+library(daver)
+
+## devtools::install_bitbucket('hlplab/nspvowels')
+library(nspvowels)
+
+apply_groupings <- function(d, groupings) {
+  groupings %>% 
+    map(~ d %>% mutate(data = map(data, . %>% group_by_(.x)),
+                       grouping = .x)) %>%
+    reduce(bind_rows)
+}
+
+grouping_levels <- c('Marginal', 'Dialect', 'Age', 'Sex', 'Dialect_Sex', 'Talker')
+
+```
+
+
+```{r nsp-data, cache=TRUE, results='hide'}
+
+nsp_vows <- nspvowels::nsp_vows %>%
+  ungroup() %>%
+  mutate(Marginal='all', Dialect_Sex = paste(Sex, Dialect, sep='_'))
+
+nsp_vows_lob <- nsp_vows %>%
+  group_by(Talker) %>%
+  mutate_each(funs(. %>% scale() %>% as.numeric()), F1:F2) %>%
+  ungroup()
+
+## check normalization
+nsp_vows_lob %>%
+  gather(formant, value, F1:F2) %>%
+  group_by(Talker, formant) %>%
+  summarise_each(funs(mean, sd), value) %$%
+  assert_that(all.equal(mean, rep(0, length(mean))),
+              all.equal(sd, rep(1, length(sd))))
+
+vowel_data <- data_frame(cues = c('Un-normalized F1xF2', 'Lobanov Normalized F1xF2'),
+                         data = list(nsp_vows, nsp_vows_lob))
+vowel_groupings <- c('Marginal', 'Sex', 'Dialect', 'Dialect_Sex', 'Talker')
+vowel_data_grouped <- apply_groupings(vowel_data, vowel_groupings)
+
+token_per_vow <- nsp_vows %>% group_by(Talker, Vowel) %>% tally() %$% mean(n)
+n_talkers <- nsp_vows %>% group_by(Talker) %>% summarise() %>% tally()
+
+n_per_dialect_sex <- nsp_vows %>% group_by(Dialect, Sex, Talker) %>% summarise() %>% tally() %$% unique(n)
+n_dialect <- nsp_vows %$% Dialect %>% unique() %>% length()
+
+```
+
+
+
+```{r vowel-data-plot}
+
+## Plot group-level distributions of vowels. kind of a mess.
+
+vowel_data_grouped_long <- vowel_data_grouped %>%
+  mutate(group_size = map2_dbl(data, grouping, ~ .x %>%
+                                                 group_by_(.y) %>%
+                                                 summarise() %>%
+                                                 nrow())) %>%
+  unnest(map2(data, grouping, ~ rename_(.x, group=.y))) %>%
+  mutate(grouping = factor(grouping, levels=grouping_levels))
+
+p_vow_group_hz <- vowel_data_grouped_long %>%
+  filter(cues == 'Un-normalized F1xF2') %>%
+  ggplot(aes(x=F2,y=F1,color=Vowel)) +
+  stat_ellipse(aes(group=Vowel), data = nsp_vows, type='norm', color='#888888') +
+  stat_ellipse(aes(group=paste(group, Vowel), alpha=1/group_size), type='norm') +
+  facet_grid(cues~grouping) +
+  scale_x_reverse('F2 (Hz)') +
+  scale_y_reverse('F1 (Hz)') +
+  scale_alpha_continuous(range=c(0.3, 1))
+
+p_vow_group_lob <- vowel_data_grouped_long %>%
+  filter(str_detect(cues, 'Lobanov')) %>% 
+  ggplot(aes(x=F2,y=F1)) +
+  stat_ellipse(aes(group=Vowel), data = nsp_vows_lob, type='norm', color='#888888') +
+  stat_ellipse(aes(color=Vowel, group=paste(group, Vowel), alpha=1/group_size), type='norm') +
+  facet_grid(cues~grouping) +
+  scale_x_reverse('F2 (Lobanov normalized)') +
+  scale_y_reverse('F1 (Lobanov normalized)') +
+  scale_alpha_continuous(range=c(0.3, 1)) +
+  theme(legend.position = 'none')
+
+plot_grid(p_vow_group_hz, p_vow_group_lob, ncol=1)
+
+```
+
+
+# KL Divergence
+
+
+```{r kl-helpers, cache=TRUE}
+
+run_kl <- function(data_grouped, reference_grouping,
+                   category_col='Vowel', cue_cols=c('F1', 'F2'), ...) {
+  ## check input format
+  assert_that(has_name(data_grouped, 'data'),
+              has_name(data_grouped, 'grouping'))
+
+  train <- partial(train_models, grouping=category_col, formants=cue_cols,  ...)
+  
+  models <- data_grouped %>%
+    mutate(models = map2(data, grouping, ~ train(.x) %>% rename_(group=.y)))
+
+  models %>%
+    filter(grouping == reference_grouping) %>%
+    mutate(reference_models = map(models, rename_, reference_group = 'group')) %>%
+    select(-grouping, -data, -models) %>%
+    left_join(models %>% filter(grouping != reference_grouping)) %>%
+    mutate(kl_from_reference = map2(models, reference_models,
+                                    ~ left_join(.x, .y, by=category_col) %>%
+                                      mutate(KL = map2_dbl(model.x, model.y,
+                                                           KL_mods)) %>%
+                                      select_('group', 'reference_group',
+                                              category_col, 'KL')
+                                    )
+           ) %>%
+    unnest(kl_from_reference)
+    
+}
+
+```
+
+```{r vowel-kl, cache=TRUE, dependson=c('kl-helpers', 'vowel-data')}
+
+vowel_kl <-
+  vowel_data_grouped %>%
+  run_kl(reference_grouping = 'Marginal',
+         category_col = 'Vowel',
+         cue_cols = c('F1', 'F2')) %>%
+  filter(!is.na(KL))                    # NAs come from one vowel ('uh') that
+                                        # only has one token for one talker.
+
+
+```
+
+
+```{r vowel-vot-kl-plot, fig.width=8.3, fig.height=4.2, fig.cap="Socio-indexical variables are more informative about cue distributions for vowel (formants) than for stop voicing (vot). On top of this, more specific groupings (like Talker and Dialect+Sex) are more informative than broader groupings (Sex). This is indicated by higher KL divergence of each grouping level from marginal (each point shows one group's average KL divergence from marginal distributions, and large points with errorbars show the mean and bootstrapped 95% CIs over groups)."}
+
+vowel_kl %>%
+  mutate(contrast = 'Vowels') %>%
+  mutate(grouping = factor(grouping, levels=grouping_levels)) %>%
+  group_by(contrast, cues, grouping, group) %>%
+  summarise(KL = mean(KL)) %>%
+  ggplot(aes(x=grouping, y=KL, color=grouping)) +
+  geom_point(position='jitter', alpha=0.2) + 
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot,
+                  position = position_dodge(w=0.5)) +
+  facet_grid(.~cues, scales='free', space='free') +
+  rotate_x_axis_labs() +
+  labs(x = 'Grouping',
+       y = 'KL Divergence of cue distributions\nfrom marginal (bits)')
+
+```
+
+
+
+```{r vowel-kl-by-category, fig.width=7, fig.height=3.45, fig.cap='Individual vowels vary substantially in the informativity of grouping variables about their cue distributions. Only normalized F1xF2 is shown to emphasize dialect effects.'}
+
+vowel_kl %>%
+  mutate(grouping = factor(grouping, levels=grouping_levels)) %>%
+  filter(str_detect(cues, 'Normalize')) %>%
+  group_by(cues, Vowel, grouping, group) %>%
+  summarise(KL = mean(KL)) %>%
+  ggplot(aes(x=Vowel, y=KL, color=grouping)) +
+  geom_pointrange(stat='summary', fun.data=mean_cl_boot,
+                  position = position_dodge(w=0.5)) +
+  facet_grid(cues ~ ., scales='free', space='free') +
+  labs(x = 'Vowel',
+       y = 'KL Divergence of cue distributions\nfrom marginal (bits)')
+
+```
+
+```{r vowel-kl-by-dialect, fig.width=7.5, fig.height=4.75, fig.cap='A small number of dialect/vowel combinations account for most of the divergence of dialect-specific vowel formant distributions. In particular, the distribution of `ae` and `aa` produced by Northern talkers diverge markedly more than any other vowel/dialect combination.'}
+
+## vowel_kl %>%
+##   filter(grouping=='Dialect') %>%
+##   ggplot(aes(x=group, y=KL)) +
+##   geom_pointrange(stat='summary', fun.data=mean_cl_boot) +
+##   facet_grid(.~cues)
+
+vowel_kl %>%
+  filter(grouping=='Dialect') %>%
+  ggplot(aes(x=group, y=KL)) +
+  geom_line(aes(group=Vowel, color=Vowel)) +
+  geom_text(data = vowel_kl %>%
+               filter(grouping == 'Dialect', str_detect(cues, 'Lobanov')) %>%
+               arrange(desc(KL)) %>%
+               head(5),
+            aes(label = Vowel, color=Vowel), show.legend=FALSE,
+            nudge_x = 0.25, nudge_y=0.05) +
+  facet_grid(.~cues) +
+  rotate_x_axis_labs() +
+  labs(x = 'Dialect',
+       y = 'KL divergence from marginal (bits)')
+
+```
+
+
+
+# Classification
+
+```{r classification-helpers, cache=TRUE}
+
+## 1. Likelihood of each token under each vowel for each dialect model
+#' Compute posterior vowel category conditional on group
+#'
+#' Applies classify_vowels to test data for each group_model.
+#'
+#' @param data_test test data to calculate posteriors for
+#' @param group_models named list of group models, each of which is a named list
+#'   of vowel models
+#' @return data frame with one row per data_test row x group x vowel model, with
+#'   added columns group_model (name of group model), vowel_model (name of vowel
+#'   model), lhood p(x | vowel_model, group_model), posterior (p(vowel_model |
+#'   x, group_model)).
+compute_category_post_given_group <- function(data_test, group_models) {
+  group_models %>%
+    map(~ unlist_models(., 'category')) %>%
+    map(~ classify(data_test, ., 'category')) %>%
+    data_frame(group_model=names(.),
+               x=.) %>%
+    unnest(x) %>%
+    rename(category_model=model)
+}
+
+#' Combine category | group posteriors with group posteriors
+#'
+#' @param group_category_posteriors category posterior probabilities conditional
+#'   on group, in the form of a data frame with at least columns category_model,
+#'   group_model, and posterior (e.g., output of
+#'   compute_category_post_given_group)
+#' @param group_posterior marginal group posterior probabilities, in the form of
+#'   a data frame with columns group_model and log_posterior (e.g., output of
+#'   compute_group_marginal_posterior)
+#' @return a data frame with the joint posterior of category category and group,
+#'   in posterior and log_posterior.
+#' 
+compute_joint_category_group_post <- function(group_category_posteriors, group_posteriors) {
+  group_posteriors %>%
+    select(group_model, group_log_posterior=log_posterior) %>%
+    inner_join(group_category_posteriors, by = 'group_model') %>%
+    mutate(log_posterior = log(posterior) + group_log_posterior,
+           posterior = exp(log_posterior))
+}
+
+#' Compute joint indexical-linguistic posterior
+#'
+#' @param trained data frame with \code{models} and \code{data_test} (as
+#'   produced by \code{\link{train_models_indexical_with_holdout}}).
+#' @param obs_vars quoted names of columns in test data that together indentify
+#'   a single observation (e.g., \code{c('Vowel', 'Token')})
+#' @return a data frame with one observation per combination of group (e.g.,
+#'   Dialect), category (e.g. "ae"), and row in the ORIGINAL, un-nested data
+#'   set, with new columns \code{group_model}, \code{category_model},
+#'   \code{lhood}, \code{posterior}, and \code{log_posterior}. Posterior
+#'   probabilities sum to 1 within each cross-validation fold (e.g., Talker) +
+#'   observation (e.g., Vowel+Token) combination, over all values of category
+#'   and group.
+#' 
+trained_to_joint_post <- function(trained, obs_vars) {
+
+  trained %>%
+    mutate(conditional_posteriors = map2(data_test, models,
+                                         compute_category_post_given_group),
+           group_posteriors = map(conditional_posteriors,
+                                  . %>%
+                                    group_by_(.dots=obs_vars) %>%
+                                    mutate(log_lhood = log(lhood)) %>%
+                                    marginalize_log('log_lhood', 'group_model') %>%
+                                    ungroup() %>%
+                                    aggregate_log_lhood('log_lhood', 'group_model') %>%
+                                    normalize_log_probability('log_lhood')),
+           joint_posteriors = map2(conditional_posteriors, group_posteriors,
+                                   compute_joint_category_group_post)) %>%
+    unnest(joint_posteriors)
+
+}
+
+
+#' @param d data frame
+#' @param holdout Column defining cross validation folds
+#' @param ... additional arguments passed to \code{\link{train_models}}.
+classify_by_talker_cv <- function(d, holdout='Token', category='Vowel', ...) {
+  train <- partial(train_models, grouping=category, ...)
+
+  d %>%
+    nspvowels::train_test_split(holdout=holdout) %>%
+    mutate(models_trained = map(data_train,
+                                . %>% group_by(Talker) %>% train()),
+           models_tested = map2(data_test, models_trained, classify,
+                                category=category)) %>%
+    unnest(models_tested) %>%
+    mutate(grouping = 'Talker',
+           group_is = 'Known',
+           group = Talker) %>%
+    rename(category_model = model)
+}
+
+
+```
+
+
+```{r vowel-classification-models-group-known, cache=TRUE, dependson=c('vowel-data', 'classification-helpers')}
+
+min_talker_per_group <- function(d) {
+  d %>%
+    do(n = length(unique(.$Talker))) %>%
+    select_('n') %>%
+    unlist() %>%
+    min()
+}
+
+#' @param d data frame with columns for groups, category, and holdout
+#' @param category name of column with phonetic category (e.g. 'Vowel')
+#' @param holdout name of column with factor to define cv folds (e.g. 'Talker')
+#' @param subsample_size number of levels of 'holdout' to sample as subset for
+#'   training data
+#' @param n_repetitions =10 number of times to repeat resampling
+#' @return data frame with accuracy of each observation by repetition.
+train_test_acc_same_group <- function(d, category, holdout,
+                                      subsample_size, n_repetitions=10, ...) {
+  assert_that(has_name(d, holdout))
+  assert_that(has_name(d, category))
+  
+  train <- partial(train_models, grouping = category, ...)
+
+  ## split data into train/test split, restricting to same group
+  ## (assumes that d is already grouped)
+  split_within_group <- function(d) {
+    d %>%
+      by_slice(train_test_split, holdout=holdout) %>%
+      unnest(.out)
+  }
+
+  ## classify and get accuracy
+  ## don't care about groups within train/test split (already restricted to same
+  ## group) so we can just use train_models and classify directly
+  train_test_acc <- function(data_train, data_test) {
+    data_train %>%
+      train() %>%
+      rename_(category=category) %>%
+      classify(data_test, ., 'category') %>%
+      rename_(category_model = 'model') %>%
+      get_accuracy(category_col = category)
+  }
+
+  ## repeat for some random subsamplings
+  repeat_w_subsample <- function(data_train, data_test) {
+    replicate(n_repetitions,
+              data_train %>%
+                sample_n_groups(group=holdout, n=subsample_size) %>%
+                train_test_acc(data_test),
+              simplify=FALSE) %>%
+      do.call(bind_rows, .)
+  }
+
+  ## on resample talkers if there are > subsample_size talkers in the smallest
+  ## group
+  group_size <- min_talker_per_group(d)
+  if (group_size <= subsample_size+1) {
+    get_acc <- train_test_acc
+  } else {
+    get_acc <- repeat_w_subsample
+  }
+
+  ## put it all together
+  acc <- d %>%
+    split_within_group() %>%
+    mutate(acc = map2(data_train, data_test, get_acc)) %>%
+    unnest(acc)
+
+}
+
+set.seed(100)
+
+vowel_acc_same_group_rep <-
+  vowel_data_grouped %>%
+  mutate(group_size = map_dbl(data, min_talker_per_group)) %>%
+  right_join(cross_d(list(group_size = unique(.$group_size),
+                          subsample_size = c(3,7))) %>%
+               filter(group_size > subsample_size)) %>%
+  mutate(acc = map2(data, subsample_size,
+                    train_test_acc_same_group,
+                    category = 'Vowel', holdout = 'Talker',
+                    n_repetitions=20)) %>%
+  unnest(map2(acc, grouping, ~ rename_(.x, group=.y)))
+
+```
+
+```{r vowel-classification, cache=TRUE, dependson=c('classification-helpers')}
+
+vowel_talker_class <-
+  vowel_data %>%
+  unnest(map(data, classify_by_talker_cv, holdout='Token')) %>%
+  mutate(group_is = 'Known')
+
+```
+
+
+```{r classification-accuracy}
+
+acc_method <- 'choice'
+
+## vot_accuracy <-
+##   vot_class %>% get_accuracy('voicing', method=acc_method)
+
+
+vowel_talker_acc <-
+  vowel_talker_class %>% get_accuracy('Vowel', method=acc_method)
+
+vowel_accuracy <-
+  vowel_acc_same_group_rep %>%
+  filter(subsample_size==3) %>%
+  group_by(cues, grouping, subsample_size, group, Talker, Vowel, Token) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  bind_rows(vowel_talker_acc) %>%
+  mutate(group_is = 'Known')
+
+accuracy <- 
+  vowel_accuracy %>%
+  select(-Age) %>%
+  mutate(contrast = 'Vowels') %>%
+  ## bind_rows(vot_accuracy %>% mutate(contrast = 'Stop voicing')) %>%
+  ungroup() %>%
+  mutate(grouping = factor(grouping, levels=grouping_levels))
+
+accuracy_summary <-
+  accuracy %>%
+  group_by(contrast, cues, grouping, group_is, Talker) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  do({ mean_cl_boot(.$accuracy) }) %>%
+  rename(accuracy = y,
+         accuracy_lo = ymin,
+         accuracy_hi = ymax)
+
+## Talker advantage
+## (TODO: incorporate)
+talker_advantage_acc <- 
+  accuracy %>%
+  group_by(cues, contrast, grouping, Talker) %>%
+  summarise(accuracy=mean(accuracy)) %>%
+  rename(Talker_=Talker) %>%
+  spread(grouping, accuracy) %>%
+  gather(comparison, accuracy, -cues, -contrast, -Talker, -Talker_) %>%
+  mutate(talker_advantage = Talker - accuracy) %>%
+  group_by(contrast, cues, comparison) %>%
+  do({ boot_ci(.$talker_advantage, function(d,i) mean(d[i], na.rm=TRUE), h0=0) }) %>%
+  filter(is.finite(observed))
+
+
+```
+
+```{r vowel-dialect-advantage}
+
+boot_dialect_advantage <- function(d) {
+  d %>%
+    filter(grouping != 'Talker') %>%
+    group_by(Talker, grouping, add=TRUE) %>%
+    summarise(proportion = mean(accuracy),
+              logodds = log(sum(accuracy)+0.5) - log(sum(1-accuracy)+0.5)) %>%
+    gather('measure', 'accuracy', proportion, logodds) %>%
+    group_by(measure, add=TRUE) %>%
+    spread(grouping, accuracy) %>%
+    transmute(Dialect_over_marginal = Dialect - Marginal,
+              Dialect_Sex_over_sex = Dialect_Sex - Sex) %>%
+    gather('comparison', 'value', Dialect_over_marginal, Dialect_Sex_over_sex) %>%
+    group_by(measure, comparison, add=TRUE) %>%
+    do({ boot_ci(.$value, function(d,i) mean(d[i]), h0=0) })
+}
+
+## compute within-talker dialect advantage
+dialect_advantage_boot_ci <-
+  vowel_accuracy %>%
+  group_by(cues, grouping) %>%
+  boot_dialect_advantage()
+
+dialect_avg_advantage <-
+  dialect_advantage_boot_ci %>%
+  filter(measure == 'proportion') %>%
+  ungroup() %>%
+  summarise(boot_p = max(boot_p),
+            observed = mean(observed))
+
+dialect_advantage_by_vowel_boot_ci <-
+  vowel_accuracy %>%
+  group_by(cues, grouping, Vowel) %>%
+  boot_dialect_advantage()
+
+dialect_advantage_by_dialect_boot_ci <-
+  vowel_accuracy %>%
+  select(-Dialect) %>%
+  left_join(nsp_vows %>% group_by(Talker, Dialect) %>% summarise(),
+            by = 'Talker') %>%
+  rename(Dialect_ = Dialect) %>%
+  group_by(cues, grouping, Dialect_) %>%
+  boot_dialect_advantage() %>%
+  rename(Dialect = Dialect_)
+
+format_advantage <- function(d, ci_descrip='95% CI', p=TRUE, paren=TRUE) {
+  adv_string <- sprintf('%.0f%%', 100*d$observed)
+  ci_string <- sprintf('%s %.0f--%.0f%%',
+                       ci_descrip, 100*d$ci_lo, 100*d$ci_high)
+  p_string <- paste(',', daver::p_val_to_less_than(d$boot_p))
+
+  if (paren) paste0(adv_string, ' (', ci_string, ifelse(p, p_string, ''), ')')
+  else paste0(adv_string, ', ', ci_string, ifelse(p, p_string, ''))
+}
+
+north_adv_lob <-
+  dialect_advantage_by_dialect_boot_ci %>%
+  filter(Dialect == 'North',
+         measure == 'proportion',
+         str_detect(cues, 'Lobanov'))
+
+north_adv_raw <-
+  dialect_advantage_by_dialect_boot_ci %>%
+  filter(Dialect == 'North',
+         measure == 'proportion',
+         !str_detect(cues, 'Lobanov'))
+
+midatl_adv_lob <-
+  dialect_advantage_by_dialect_boot_ci %>%
+  filter(Dialect == 'Mid-Atlantic',
+         measure == 'proportion',
+         str_detect(cues, 'Lobanov'))
+
+midatl_adv_raw <-
+  dialect_advantage_by_dialect_boot_ci %>%
+  filter(Dialect == 'Mid-Atlantic',
+         measure == 'proportion',
+         !str_detect(cues, 'Lobanov'))
+
+```
+
+```{r stars-and-bars}
+
+make_stars_and_bars <- function(advantage, data_summary,
+                                ci_hi_col = 'accuracy_hi') {
+  advantage %>%
+    ungroup() %>%
+    filter(boot_p< 0.05, measure=='proportion') %>%
+    mutate(boot_p_stars = p_val_to_stars(boot_p)) %>%
+    separate(comparison, c('To', 'From'), sep='_over_') %>%
+    mutate(From = tools::toTitleCase(From)) %>%
+    left_join(data_summary) %>%
+    filter(To == grouping | From == grouping) %>%
+    group_by_('To', 'From',
+              .dots = groups(data_summary) %>% discard(equals, 'grouping'),
+              add=TRUE) %>%
+    filter_(lazyeval::interp(~ x == max(x), x=as.name(ci_hi_col)))
+}
+
+## draw significance stars
+geom_stars <- function(...) {
+  stars_and_bars <- make_stars_and_bars(...)
+  geom_text(data=stars_and_bars,
+            aes(x=To, y=accuracy_hi, label=boot_p_stars),
+            nudge_x=-0.5, nudge_y = 0.03, color='black')
+}
+
+## draw bars connecting significantly different pairs
+geom_bars <- function(...) {
+  stars_and_bars <- make_stars_and_bars(...)
+  geom_segment(data=stars_and_bars,
+               aes(x=From, xend=To, y=accuracy_hi+0.02, yend=accuracy_hi+0.02),
+               color='black')
+}
+
+```
+
+```{r overall-accuracy-group-known, fig.width=8.3, fig.height=4.2, fig.cap='Speech recognition accuracy using for marginal, group-level, and talker-specific cue distributions. Small points show individual talkers, and large points and lines show mean and bootstrapped 95% CIs over talkers. Marginal and group-level accuracy is based on leave-one-talker out cross-validation, and talker-specific on 6-fold cross-validation (or leave-one-token-per-category out if there are fewer than 6 tokens per category). Bars and stars show signficant increases in accuracy when conditioning on dialect, alone or in addition to sex. For clarity, only some significant comparisons are shown. Here and elsewhere: `*` $p<0.05$, `**` $p<0.01$, and `***` $p<0.001$.'}
+
+accuracy_summary %>%
+  ggplot(aes(x = grouping, y=accuracy,
+             color = grouping)) +
+  geom_point(data = accuracy %>%
+               group_by(grouping, Talker, cues, contrast) %>%
+               summarise(accuracy = mean(accuracy)),
+             position='jitter', alpha=0.2) +
+  geom_pointrange(aes(ymin=accuracy_lo, ymax=accuracy_hi), stat='identity') +
+  geom_stars(dialect_advantage_boot_ci, accuracy_summary) +
+  geom_bars(dialect_advantage_boot_ci, accuracy_summary) +
+  facet_grid(.~cues, scales='free_x', space='free_x') +
+  rotate_x_axis_labs() +
+  labs(x = 'Grouping',
+       y = 'Probability of correct recognition') +
+  lims(y = c(NA, 1))
+
+```
+
+
+```{r by-vowel-acc-group-known, fig.width=10, fig.height=5, fig.cap='Probability of correct recognition varies across vowels, overall and according to the socio-indexical grouping variable. Bars and stars show significant improvement from conditioning on dialect, above marginal or in addition to sex alone.'}
+
+acc_by_vowel <- accuracy %>%
+  filter(contrast == 'Vowels') %>%
+  group_by(cues, group_is, grouping, subsample_size, Vowel, Talker) %>%
+  summarise_each(funs(mean), accuracy)
+
+acc_by_vowel_summary <-
+  acc_by_vowel %>%
+  do({ mean_cl_boot(.$accuracy) }) %>%
+  rename(accuracy = y,
+         accuracy_lo = ymin,
+         accuracy_hi = ymax)
+
+acc_by_vowel_summary %>%
+  ggplot(aes(x=grouping, y=accuracy, color=grouping)) +
+  geom_pointrange(aes(ymin=accuracy_lo, ymax=accuracy_hi),
+                  position = position_dodge(w=0.7)) +
+  facet_grid(cues~Vowel) +
+  labs(y = 'Probability of correct recognition') +
+  geom_stars(dialect_advantage_by_vowel_boot_ci,
+             acc_by_vowel_summary) +
+  geom_bars(dialect_advantage_by_vowel_boot_ci,
+            acc_by_vowel_summary) +
+  theme(axis.text.x= element_blank())
+
+```
+
+
+```{r overall-acc-by-dialect, fig.width=10, fig.height=5, fig.cap='The utility of socio-indexical variables varies across dialects. Dialect itself is particularly informative only for talkers from the Mid-Atlantic and North regions. Each line shows a single talker, to emphasize within-talker changes in accuracy with grouping level, and large points and confidence intervals show mean accuracy and bootstrapped 95% CIs over talkers.'}
+
+pd <- function() position_dodge(w=0.7)
+
+vowel_acc_by_talker <-
+  vowel_accuracy %>%
+  group_by(cues, grouping, group, Talker) %>%
+  summarise(accuracy = mean(accuracy)) %>%
+  left_join(nsp_vows %>%
+              group_by(Talker, Dialect) %>%
+              summarise()) %>%
+  ungroup() %>%
+  mutate(grouping=factor(grouping, levels=grouping_levels))
+
+vowel_acc_by_talker_summary <-
+  vowel_acc_by_talker %>%
+  group_by(cues, Dialect, grouping) %>%
+  do({ mean_cl_boot(.$accuracy) }) %>%
+  rename(accuracy = y,
+         accuracy_lo = ymin,
+         accuracy_hi = ymax)
+
+dialect_stars_and_bars <-
+  make_stars_and_bars(dialect_advantage_by_dialect_boot_ci,
+                      vowel_acc_by_talker_summary)
+
+## TODO-paper: graph is confusing. separate panels better.
+
+ggplot(vowel_acc_by_talker, aes(x=grouping, y=accuracy, color=grouping)) +
+  geom_line(aes(group=Talker), color='grey90') +
+  geom_pointrange(data=vowel_acc_by_talker_summary, stat='identity',
+                  aes(ymin=accuracy_lo, ymax=accuracy_hi)) +
+  facet_grid(cues ~ Dialect) +
+  scale_y_continuous('Probability of correct recognition', limits=c(0,1)) +
+  geom_bars(dialect_advantage_by_dialect_boot_ci,
+            vowel_acc_by_talker_summary) +
+  geom_stars(dialect_advantage_by_dialect_boot_ci,
+             vowel_acc_by_talker_summary) +
+  rotate_x_axis_labs()
+
+```
