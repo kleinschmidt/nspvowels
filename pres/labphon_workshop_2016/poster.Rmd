@@ -19,17 +19,39 @@ output:
 
 ---
 
+* Listeners need to cope with talker variability
+* Can think of this as a statistical inference problem: infer current talker's
+  cue distributions.
+* Combine experience with current talker with prior experience with other talkers
+* Structure in talker variability determines how best to use prior experience.
+* A good place to look for structure: socio-indexical variables like gender,
+  dialect, etc.
+  
+* Question: how much do socio-indexical grouping variables tell us about a
+  talker's phonetic cue distributions? 
+* Focus on dialect. Compare to sex and talker identity
+* Structure could vary based on how cues are represented, so also compare raw
+  formant frequencies (Hz) and Lobanov normalized formants (z-score within
+  talker) which removes differences in overall average F1 and F2 across all
+  vowels (e.g., due to differnt vocal tract sizes).
 
 # Methods
 
-
-* Goal: assess joint informativity of linguistic variables, socio-indexical variables, and acoustic cues.
-
 ## Data
 
-* F1 and F2 measurements from isolated hVd words from Nationwide Speech Project corpus
-* Data from 48 talkers: 4 male and 4 female from 6 dialect regions.
-* 11 vowels,  5 repetitions per vowel (on average: a few have 6, a few less).
+F1 and F2 measurements from isolated hVd words from Nationwide Speech Project corpus
+Data from 48 talkers: 4 male and 4 female from 6 dialect regions.
+11 vowels,  5 repetitions per vowel (on average: a few have 6, a few less).
+
+## Approach
+
+Extract group-conditioned cue distributions for each vowel
+
+p(cue | vowel, group)
+
+
+Based on raw formant frequencies in Hz, or Lobanov-normalized (z-scored within talker).
+Marginal (all tokens from all talkers), or conditioned on talker, sex, dialect, or dialect and sex together.
 
 ## Informativity about cue distributions
 
@@ -54,8 +76,27 @@ recognition from
 1. _tracking_ conditional cue distributions
 2. _knowing_ the value of that variable
 
+Note: a variable can be informative but not useful, if variation doesn't lead to
+confusion
+
 Quantify this using an _ideal listener_ model. Classify observations based on
 conditional cue distributions using Bayes rule
+
+
+# Results
+
+Knowing a talker's dialect is informative about their vowel distributions
+But less so than talker identity, and sex (for raw formants)
+Also useful for vowel recognition, but only for some dialect-vowel combinations
+
+# Conclusions
+
+Quantified how much listeners can benefit from tracking cue distributions conditioned on different socio-indexical variables
+
+Found that dialect is informative and useful, at an intermediate level,
+depending on how cues are represented.
+
+
 
 
 ```{r preamble, message=FALSE, warning=FALSE, error=FALSE, echo=FALSE, results='hide'}
@@ -124,7 +165,8 @@ nsp_vows_lob %>%
   assert_that(all.equal(mean, rep(0, length(mean))),
               all.equal(sd, rep(1, length(sd))))
 
-vowel_data <- data_frame(cues = c('Un-normalized F1xF2', 'Lobanov Normalized F1xF2'),
+vowel_data <- data_frame(cues_long = c('Un-normalized F1xF2', 'Lobanov Normalized F1xF2'),
+                         cues = c('Raw (Hz)', 'Lob. Norm.'),
                          data = list(nsp_vows, nsp_vows_lob))
 vowel_groupings <- c('Marginal', 'Sex', 'Dialect', 'Dialect_Sex', 'Talker')
 vowel_data_grouped <- apply_groupings(vowel_data, vowel_groupings)
@@ -152,7 +194,7 @@ vowel_data_grouped_long <- vowel_data_grouped %>%
   mutate(grouping = factor(grouping, levels=grouping_levels))
 
 p_vow_group_hz <- vowel_data_grouped_long %>%
-  filter(cues == 'Un-normalized F1xF2') %>%
+  filter(cues_long == 'Un-normalized F1xF2') %>%
   ggplot(aes(x=F2,y=F1,color=Vowel)) +
   stat_ellipse(aes(group=Vowel), data = nsp_vows, type='norm', color='#888888') +
   stat_ellipse(aes(group=paste(group, Vowel), alpha=1/group_size), type='norm') +
@@ -162,7 +204,7 @@ p_vow_group_hz <- vowel_data_grouped_long %>%
   scale_alpha_continuous(range=c(0.3, 1))
 
 p_vow_group_lob <- vowel_data_grouped_long %>%
-  filter(str_detect(cues, 'Lobanov')) %>% 
+  filter(str_detect(cues_long, 'Lobanov')) %>% 
   ggplot(aes(x=F2,y=F1)) +
   stat_ellipse(aes(group=Vowel), data = nsp_vows_lob, type='norm', color='#888888') +
   stat_ellipse(aes(color=Vowel, group=paste(group, Vowel), alpha=1/group_size), type='norm') +
@@ -226,7 +268,7 @@ vowel_kl <-
 ```
 
 
-```{r vowel-vot-kl-plot, fig.width=8.3, fig.height=4.2, fig.cap="Socio-indexical variables are more informative about cue distributions for vowel (formants) than for stop voicing (vot). On top of this, more specific groupings (like Talker and Dialect+Sex) are more informative than broader groupings (Sex). This is indicated by higher KL divergence of each grouping level from marginal (each point shows one group's average KL divergence from marginal distributions, and large points with errorbars show the mean and bootstrapped 95% CIs over groups)."}
+```{r vowel-vot-kl-plot, fig.width=5, fig.height=4.2}
 
 vowel_kl %>%
   mutate(contrast = 'Vowels') %>%
@@ -242,23 +284,26 @@ vowel_kl %>%
   labs(x = 'Grouping',
        y = 'KL Divergence of cue distributions\nfrom marginal (bits)')
 
+
 ```
 
 
 
 ```{r vowel-kl-by-category, fig.width=7, fig.height=3.45, fig.cap='Individual vowels vary substantially in the informativity of grouping variables about their cue distributions. Only normalized F1xF2 is shown to emphasize dialect effects.'}
 
+
 vowel_kl %>%
   mutate(grouping = factor(grouping, levels=grouping_levels)) %>%
-  filter(str_detect(cues, 'Normalize')) %>%
+  ## filter(str_detect(cues, 'Normalize')) %>%
   group_by(cues, Vowel, grouping, group) %>%
   summarise(KL = mean(KL)) %>%
-  ggplot(aes(x=Vowel, y=KL, color=grouping)) +
+  ggplot(aes(x=grouping, y=KL, color=grouping)) +
   geom_pointrange(stat='summary', fun.data=mean_cl_boot,
                   position = position_dodge(w=0.5)) +
-  facet_grid(cues ~ ., scales='free', space='free') +
-  labs(x = 'Vowel',
-       y = 'KL Divergence of cue distributions\nfrom marginal (bits)')
+  facet_grid(cues ~ Vowel, scales='free', space='free') +
+  labs(x = '',
+       y = 'KL Divergence of cue distributions\nfrom marginal (bits)') +
+  theme(axis.text.x= element_blank())
 
 ```
 
@@ -270,12 +315,13 @@ vowel_kl %>%
 ##   geom_pointrange(stat='summary', fun.data=mean_cl_boot) +
 ##   facet_grid(.~cues)
 
+
 vowel_kl %>%
   filter(grouping=='Dialect') %>%
   ggplot(aes(x=group, y=KL)) +
   geom_line(aes(group=Vowel, color=Vowel)) +
   geom_text(data = vowel_kl %>%
-               filter(grouping == 'Dialect', str_detect(cues, 'Lobanov')) %>%
+               filter(grouping == 'Dialect', str_detect(cues, 'Lob')) %>%
                arrange(desc(KL)) %>%
                head(5),
             aes(label = Vowel, color=Vowel), show.legend=FALSE,
@@ -602,25 +648,25 @@ north_adv_lob <-
   dialect_advantage_by_dialect_boot_ci %>%
   filter(Dialect == 'North',
          measure == 'proportion',
-         str_detect(cues, 'Lobanov'))
+         str_detect(cues, 'Lob'))
 
 north_adv_raw <-
   dialect_advantage_by_dialect_boot_ci %>%
   filter(Dialect == 'North',
          measure == 'proportion',
-         !str_detect(cues, 'Lobanov'))
+         !str_detect(cues, 'Lob'))
 
 midatl_adv_lob <-
   dialect_advantage_by_dialect_boot_ci %>%
   filter(Dialect == 'Mid-Atlantic',
          measure == 'proportion',
-         str_detect(cues, 'Lobanov'))
+         str_detect(cues, 'Lob'))
 
 midatl_adv_raw <-
   dialect_advantage_by_dialect_boot_ci %>%
   filter(Dialect == 'Mid-Atlantic',
          measure == 'proportion',
-         !str_detect(cues, 'Lobanov'))
+         !str_detect(cues, 'Lob'))
 
 ```
 
@@ -660,7 +706,7 @@ geom_bars <- function(...) {
 
 ```
 
-```{r overall-accuracy-group-known, fig.width=8.3, fig.height=4.2, fig.cap='Speech recognition accuracy using for marginal, group-level, and talker-specific cue distributions. Small points show individual talkers, and large points and lines show mean and bootstrapped 95% CIs over talkers. Marginal and group-level accuracy is based on leave-one-talker out cross-validation, and talker-specific on 6-fold cross-validation (or leave-one-token-per-category out if there are fewer than 6 tokens per category). Bars and stars show signficant increases in accuracy when conditioning on dialect, alone or in addition to sex. For clarity, only some significant comparisons are shown. Here and elsewhere: `*` $p<0.05$, `**` $p<0.01$, and `***` $p<0.001$.'}
+```{r overall-accuracy-group-known, fig.width=5, fig.height=4.2, fig.cap='Speech recognition accuracy using for marginal, group-level, and talker-specific cue distributions. Small points show individual talkers, and large points and lines show mean and bootstrapped 95% CIs over talkers. Marginal and group-level accuracy is based on leave-one-talker out cross-validation, and talker-specific on 6-fold cross-validation (or leave-one-token-per-category out if there are fewer than 6 tokens per category). Bars and stars show signficant increases in accuracy when conditioning on dialect, alone or in addition to sex. For clarity, only some significant comparisons are shown. Here and elsewhere: `*` $p<0.05$, `**` $p<0.01$, and `***` $p<0.001$.'}
 
 accuracy_summary %>%
   ggplot(aes(x = grouping, y=accuracy,
@@ -676,7 +722,7 @@ accuracy_summary %>%
   rotate_x_axis_labs() +
   labs(x = 'Grouping',
        y = 'Probability of correct recognition') +
-  lims(y = c(NA, 1))
+  lims(y = c(0, 1))
 
 ```
 
@@ -700,7 +746,7 @@ acc_by_vowel_summary %>%
   geom_pointrange(aes(ymin=accuracy_lo, ymax=accuracy_hi),
                   position = position_dodge(w=0.7)) +
   facet_grid(cues~Vowel) +
-  labs(y = 'Probability of correct recognition') +
+  scale_y_continuous('Probability of correct recognition', limits=c(0,1)) +
   geom_stars(dialect_advantage_by_vowel_boot_ci,
              acc_by_vowel_summary) +
   geom_bars(dialect_advantage_by_vowel_boot_ci,
@@ -710,7 +756,7 @@ acc_by_vowel_summary %>%
 ```
 
 
-```{r overall-acc-by-dialect, fig.width=10, fig.height=5, fig.cap='The utility of socio-indexical variables varies across dialects. Dialect itself is particularly informative only for talkers from the Mid-Atlantic and North regions. Each line shows a single talker, to emphasize within-talker changes in accuracy with grouping level, and large points and confidence intervals show mean accuracy and bootstrapped 95% CIs over talkers.'}
+```{r overall-acc-by-dialect, fig.width=8, fig.height=5, fig.cap='The utility of socio-indexical variables varies across dialects. Dialect itself is particularly informative only for talkers from the Mid-Atlantic and North regions. Each line shows a single talker, to emphasize within-talker changes in accuracy with grouping level, and large points and confidence intervals show mean accuracy and bootstrapped 95% CIs over talkers.'}
 
 pd <- function() position_dodge(w=0.7)
 
@@ -738,9 +784,11 @@ dialect_stars_and_bars <-
 
 ## TODO-paper: graph is confusing. separate panels better.
 
-ggplot(vowel_acc_by_talker, aes(x=grouping, y=accuracy, color=grouping)) +
+vowel_acc_by_talker %>%
+  ggplot(aes(x=grouping, y=accuracy, color=grouping)) +
   geom_line(aes(group=Talker), color='grey90') +
-  geom_pointrange(data=vowel_acc_by_talker_summary, stat='identity',
+  geom_pointrange(data=vowel_acc_by_talker_summary,
+                  stat='identity',
                   aes(ymin=accuracy_lo, ymax=accuracy_hi)) +
   facet_grid(cues ~ Dialect) +
   scale_y_continuous('Probability of correct recognition', limits=c(0,1)) +
@@ -748,6 +796,6 @@ ggplot(vowel_acc_by_talker, aes(x=grouping, y=accuracy, color=grouping)) +
             vowel_acc_by_talker_summary) +
   geom_stars(dialect_advantage_by_dialect_boot_ci,
              vowel_acc_by_talker_summary) +
-  rotate_x_axis_labs()
+  theme(axis.text.x= element_blank())
 
 ```
