@@ -17,6 +17,7 @@ Depends:
     mvtnorm,
     psych,
     assertthat,
+    magrittr,
     daver
 Remotes:
     github::kleinschmidt/daver
