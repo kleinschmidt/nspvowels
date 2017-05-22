@@ -7,11 +7,10 @@
 KL.bvnorm(mu1, sigma1, mu2, sigma2)
 }
 \arguments{
-\item{mu1}{mean vector of first distribution}
+\item{mu1, mu2}{mean vector of two distributions}
 
-\item{sigma1}{covariance matrix in vector (see covar2D) or matrix form}
-
-\item{sigma2}{}
+\item{sigma1, sigma2}{covariance matrix in lower triangular vector (see
+\link{\code{covar2D}}) or matrix form}
 }
 \description{
 Calculate the KL divergence between two bivariate Gaussians

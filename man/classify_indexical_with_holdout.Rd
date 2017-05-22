@@ -7,8 +7,9 @@
 classify_indexical_with_holdout(data_and_models)
 }
 \arguments{
-\item{data_and_models}{output of train_models_indexical_with_holdout
-(required columns are data_test and models)}
+\item{data_and_models}{output of train_models_indexical_with_holdout, with
+one row per talker (or holdout grouping level), and list columns for
+\code{data_test} and \code{models}.}
 }
 \value{
 Data frame with one row per combination of data row and model, with

@@ -2,6 +2,7 @@
 
 export(KL.bvnorm)
 export(KL_mods)
+export(apply_model_list)
 export(classify)
 export(classify_indexical_with_holdout)
 export(classify_vowels)

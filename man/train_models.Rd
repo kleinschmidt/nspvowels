@@ -8,6 +8,8 @@ train_models(data, grouping = "Vowel", formants = c("F1", "F2"),
   add_groups = TRUE)
 }
 \arguments{
+\item{data}{Data source with columns for grouping and "formants"}
+
 \item{grouping}{quoted column names to group by (strings, `quote`, or `~`)
 (default "Vowels")}
 
