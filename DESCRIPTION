@@ -11,17 +11,20 @@ Description: Analyzing the influence of talker identity, gender, and dialect
     corpus.
 Depends:
     R (>= 3.2.3),
-    purrr,
-    dplyr,
-    tidyr,
-    mvtnorm,
-    psych,
-    assertthat,
-    magrittr,
-    daver
+Imports:
+    mvtnorm (>= 1.0),
+    psych (>= 1.7.5),
+    purrr (>= 0.2.2),
+    dplyr (>= 0.5),
+    tidyr (>= 0.6.3),
+    lazyeval (>= 0.2.0),
+    assertthat (>= 0.2.0),
+    magrittr (>= 1.5),
+    daver (>= 0.0.3)
 Remotes:
     github::kleinschmidt/daver
 License: MIT
 LazyData: true
 RoxygenNote: 6.0.1
 Suggests: testthat
+Encoding:UTF-8

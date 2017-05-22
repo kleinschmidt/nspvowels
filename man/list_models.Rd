@@ -11,7 +11,7 @@ list_models(d, names_col = NULL, model_field = "model")
 
 \item{names_col}{(optional) name of column to be used for names of models}
 
-\item{model_col}{='model' name of column with models}
+\item{model_field}{='model' name of column with models}
 }
 \value{
 a named list of models

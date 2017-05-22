@@ -2,3 +2,6 @@
 ^\.Rproj\.user$
 ^data-raw$
 ^\.travis\.yml$
+^pres$
+^.*_cache$
+^.*_files$

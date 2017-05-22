@@ -12,6 +12,8 @@ matrix Sigma)}
 
 \item{dat}{matrix with observations in rows and dimensions in columns, passed to
 mvtnorm::mvnorm.}
+
+\item{...}{additional arguments are passed to dmvnorm}
 }
 \description{
 Likelihood of data under one vowel's model

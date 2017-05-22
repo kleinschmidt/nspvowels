@@ -19,6 +19,6 @@ marginal_model_lhood(mods, data, log = TRUE, ...)
 vector with marginal likelihood for each row in data.
 }
 \description{
-Calls \link{\code{model_lhood}} on each model and takes the average (assumes
+Calls \code{\link{model_lhood}} on each model and takes the average (assumes
 equal prior/mixing weights)
 }
