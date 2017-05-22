@@ -21,3 +21,4 @@ devtools::install_github("kleinschmidt/nspvowels")
     characteristics of the vowel systems of six regional varieties of American
     English. The Journal of the Acoustical Society of America,
     118(3), 1661. https://doi.org/10.1121/1.2000774
+
