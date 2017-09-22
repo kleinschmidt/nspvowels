@@ -4,7 +4,7 @@
 \alias{sample_n_groups}
 \title{Randomly subsample data by group}
 \usage{
-sample_n_groups(tbl, group, n)
+sample_n_groups(tbl, group, n, ...)
 }
 \arguments{
 \item{tbl}{tbl of data}
@@ -12,13 +12,16 @@ sample_n_groups(tbl, group, n)
 \item{group}{(quoted) grouping variable}
 
 \item{n}{number of samples}
+
+\item{...}{additional arguments are passed to dplyr::sample_n.}
 }
 \value{
 A tbl with \code{n} levels of \code{group} randomly sampled within
-  each existing grouping level of \code{tbl} randomly sampled from
-  \code{tbl}. Any grouping of \code{tbl} is preserved in the return value.
+  each existing grouping level of \code{tbl}. Any grouping of \code{tbl} is
+  preserved in the return value.
 }
 \description{
-Subsampling will be done at the level of the specified variable,
-\emph{within} any grouping that already exists in the input tbl.
+Wraps dplyr::sample_n.  Subsampling will be done at the level of the
+specified \code{group} column, \emph{within} any grouping that already exists
+in the input tbl.
 }
