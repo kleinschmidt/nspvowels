@@ -1,31 +1,17 @@
 Package: nspvowels
-Title: Dialect, gender, and talker analysis of Nationwide Speech Project vowels
-Version: 0.0.3
+Title: Nationwide Speech Project hVd F1 and F2 values
+Version: 0.0.9000
 Authors@R: as.person(c(
   "Dave Kleinschmidt <dave.f.kleinschmidt@gmail.com> [aut, cre]",
   "Kodi Weatherholtz <kweatherholtz@gmail.com> [aut]",
   "T. Florian Jaeger <fjaeger@ur.rochester.edu> [aut]"
   ))
-Description: Analyzing the influence of talker identity, gender, and dialect
-    on vowel F1/F2 data from hVd word productions in the Nationwide Speech Project
-    corpus.
+Description: F1 and F2 measurements for hVd vowels from the Nationwide Speech
+  Project, produced by 48 talkers, 4 males and 4 females from each of 6 major
+  dialect regions.
 Depends:
     R (>= 3.2.3),
-Imports:
-    mvtnorm (>= 1.0),
-    psych (>= 1.7.5),
-    purrr (>= 0.2.2),
-    purrrlyr (>= 0.0.2),
-    dplyr (>= 0.5),
-    tidyr (>= 0.6.3),
-    lazyeval (>= 0.2.0),
-    assertthat (>= 0.2.0),
-    magrittr (>= 1.5),
-    daver (>= 0.0.3)
-Remotes:
-    github::kleinschmidt/daver
 License: MIT
 LazyData: true
 RoxygenNote: 6.0.1
-Suggests: testthat
 Encoding:UTF-8
