@@ -4,7 +4,7 @@ Version: 0.1.0
 Authors@R: c(person("Cynthia G", "Clopper", email = "clopper.1@osu.edu", role = c("aut")),
              person("David B", "Pisoni", email = "pisoni@indiana.edu", role = c("aut")),
              person("Kenneth J", "de Jong", email = "kdejong@Indiana.edu", role = c("aut")),
-             person("Dave", "Kleinschmidt", email = "dave.f.kleinschmidt@gmail.com", role = c("com")))
+             person("Dave", "Kleinschmidt", email = "dave.f.kleinschmidt@gmail.com", role = c("cre", "com")))
 Description: F1 and F2 measurements for hVd vowels from the Nationwide Speech
   Project, produced by 48 talkers, 4 males and 4 females from each of 6 major
   dialect regions.  Data from Clopper, C. G., Pisoni, D. B., & de Jong,
@@ -13,7 +13,9 @@ Description: F1 and F2 measurements for hVd vowels from the Nationwide Speech
   America, 118(3), 1661–1676. https://doi.org/10.1121/1.2000774.  Package
   compiled by Dave Kleinschmidt.
 Depends:
-    R (>= 3.2.3),
+    R (>= 3.2.3)
+Imports:
+    tibble
 License: MIT
 LazyData: true
 RoxygenNote: 6.0.1

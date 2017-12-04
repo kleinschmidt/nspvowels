@@ -1,3 +1,5 @@
+#' @import tibble
+NULL
 
 #' F1 and F2 from NSP hVd words
 #'
