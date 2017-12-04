@@ -1,0 +1,14 @@
+bibentry(
+  bibtype = "Article",
+  author = c(person("Cynthia G", "Clopper"),
+             person("David B", "Pisoni"),
+             person("Kenneth J", "de Jong")),
+  doi = "10.1121/1.2000774",
+  journal = "The Journal of the Acoustical Society of America",
+  number = "3",
+  title = "Variability in vowel production within and between days",
+  volume = "118",
+  year = "2005",
+  pages = "1661-1676",
+  textVersion = "Clopper, C. G., Pisoni, D. B., & de Jong, K. J. (2005). Acoustic characteristics of the vowel systems of six regional varieties of American English. The Journal of the Acoustical Society of America, 118(3), 1661–1676. https://doi.org/10.1121/1.2000774"
+)
