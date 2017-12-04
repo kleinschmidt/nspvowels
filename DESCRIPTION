@@ -1,11 +1,10 @@
 Package: nspvowels
 Title: Nationwide Speech Project hVd F1 and F2 values
 Version: 0.0.9000
-Authors@R: as.person(c(
-  "Dave Kleinschmidt <dave.f.kleinschmidt@gmail.com> [aut, cre]",
-  "Kodi Weatherholtz <kweatherholtz@gmail.com> [aut]",
-  "T. Florian Jaeger <fjaeger@ur.rochester.edu> [aut]"
-  ))
+Authors@R: c(person("Dave", "Kleinschmidt", email = "dave.f.kleinschmidt@gmail.com", role = c("cre", "com")),
+             person("Cynthia G", "Clopper", email = "clopper.1@osu.edu", role = c("aut")),
+             person("David B", "Pisoni", email = "pisoni@indiana.edu", role = c("aut")),
+             person("Kenneth J", "de Jong", email = "kdejong@Indiana.edu", role = c("aut")))
 Description: F1 and F2 measurements for hVd vowels from the Nationwide Speech
   Project, produced by 48 talkers, 4 males and 4 females from each of 6 major
   dialect regions.
