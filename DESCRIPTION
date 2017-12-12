@@ -1,6 +1,6 @@
 Package: nspvowels
 Title: Nationwide Speech Project hVd F1 and F2 values
-Version: 0.1.0
+Version: 1.0.0
 Authors@R: c(person("Cynthia G", "Clopper", email = "clopper.1@osu.edu", role = c("aut")),
              person("David B", "Pisoni", email = "pisoni@indiana.edu", role = c("aut")),
              person("Kenneth J", "de Jong", email = "kdejong@Indiana.edu", role = c("aut")),
